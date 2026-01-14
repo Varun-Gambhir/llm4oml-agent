@@ -1,0 +1,293 @@
+# ============================================================================
+# File: config/default.yaml
+# ============================================================================
+# Default configuration for Convergence Proof Agent v2.0
+
+models:
+  prover:
+    name: "openai/gpt-oss-120b"
+    temperature: 0.5
+    max_tokens: 8192
+  
+  evaluators:
+    use_multi_judge: true
+    models:
+      - "openai/gpt-oss-120b"
+      - "meta/llama-3.1-70b-instruct"
+    temperature: 0.5
+    max_tokens: 8192
+
+workflow:
+  max_iterations: 3
+  min_crs_threshold: 0.7  # Minimum CRS to consider "good" correction
+
+metrics:
+  correction:
+    # Weights for CRS computation
+    weight_err: 0.5    # Error Resolution Rate
+    weight_rp: 0.3     # Regression Penalty
+    weight_tfp: 0.2    # Targeted Fix Precision
+  
+  judge_reliability:
+    # Weights for JRS computation
+    alpha: 0.6         # Weight for ESA (agreement)
+    beta: 0.4          # Weight for z-score penalty
+    outlier_threshold: 2.0  # Z-score threshold for outliers
+
+logging:
+  level: "INFO"
+  log_dir: "logs"
+  save_proofs: true
+  save_intermediate_states: true
+
+batch_processing:
+  parallel_workers: 1  # Process one at a time for now
+  checkpoint_frequency: 1  # Save after each algorithm
+
+# ---
+# ============================================================================
+# File: MIGRATION_GUIDE.md (as YAML comment for this artifact)
+# ============================================================================
+# 
+# # Migration Guide: v1 → v2
+# 
+# ## Overview
+# This guide helps you migrate from the single-file agent.py to the modular v2.0 structure.
+# 
+# ## Quick Start
+# 
+# ### 1. Setup New Environment
+# ```bash
+# # Create new directory
+# mkdir convergence-proof-agent-v2
+# cd convergence-proof-agent-v2
+# 
+# # Copy over the new structure
+# # (Use the artifacts provided)
+# 
+# # Install dependencies
+# pip install -e .
+# ```
+# 
+# ### 2. Migrate Your Data
+# ```bash
+# # Copy your CSV input files
+# cp /path/to/old/LLM\ for\ Convergence\ -\ GPT\ 5.csv ./data/
+# 
+# # Copy any custom prompts (if modified)
+# # Edit src/utils/prompts.py to include your changes
+# ```
+# 
+# ### 3. Update Environment Variables
+# ```bash
+# cp .env.example .env
+# # Edit .env with your API keys
+# ```
+# 
+# ### 4. Run Your First Test
+# ```bash
+# # Single algorithm test
+# python scripts/run_single.py \
+#   --algorithm "SGD with momentum" \
+#   --assumptions "Convex, L-smooth" \
+#   --multi-judge \
+#   --judges openai/gpt-oss-120b meta/llama-3.1-70b-instruct
+# 
+# # Batch processing
+# python scripts/run_batch.py \
+#   --input data/LLM\ for\ Convergence\ -\ GPT\ 5.csv \
+#   --output results/processed_v2.csv \
+#   --multi-judge \
+#   --max-iter 3
+# ```
+# 
+# ## Key Differences
+# 
+# ### Old (v1) Code Structure
+# ```
+# agent.py              # Everything in one file (~500 lines)
+# batch_processor.py    # Separate batch logic
+# ```
+# 
+# ### New (v2) Code Structure
+# ```
+# src/
+#   agents/            # Separated proof generation logic
+#   evaluators/        # Multi-judge system
+#   metrics/           # CRS and judge metrics
+#   utils/             # Reusable utilities
+#   models/            # Type definitions
+#   graph/             # LangGraph workflow
+# ```
+# 
+# ## API Changes
+# 
+# ### Running Single Proof
+# 
+# **Old (v1):**
+# ```python
+# from agent import app
+# 
+# state = {
+#     "algorithm_description": algo,
+#     "assumptions": assump,
+#     "iteration": 0,
+#     ...
+# }
+# 
+# for output in app.stream(state):
+#     # Handle output
+# ```
+# 
+# **New (v2):**
+# ```python
+# from src.graph.workflow import ProofWorkflow
+# 
+# workflow = ProofWorkflow(
+#     prover_model="openai/gpt-oss-120b",
+#     evaluator_models=["openai/gpt-oss-120b"],
+#     use_multi_judge=True
+# )
+# 
+# final_state = workflow.run(algo, assump)
+# ```
+# 
+# ### Batch Processing
+# 
+# **Old (v1):**
+# ```python
+# from agent import app
+# # Custom iteration logic
+# # Manual CSV updates
+# ```
+# 
+# **New (v2):**
+# ```python
+# from scripts.run_batch import BatchProcessor
+# 
+# processor = BatchProcessor(
+#     input_csv="data.csv",
+#     output_csv="results.csv",
+#     output_json="logs.json",
+#     ...
+# )
+# processor.process()
+# ```
+# 
+# ## New Features in v2
+# 
+# ### 1. Multi-Judge Evaluation
+# ```python
+# workflow = ProofWorkflow(
+#     evaluator_models=[
+#         "openai/gpt-oss-120b",
+#         "meta/llama-3.1-70b-instruct",
+#         "meta/llama-3.1-405b-instruct"
+#     ],
+#     use_multi_judge=True
+# )
+# ```
+# 
+# ### 2. Correction Reasoning Score (CRS)
+# ```python
+# from src.metrics.correction_metrics import CorrectionMetricsCalculator
+# 
+# calc = CorrectionMetricsCalculator()
+# crs_output = calc.compute_crs(
+#     prev_error_set,
+#     curr_error_set,
+#     flagged_steps,
+#     total_steps
+# )
+# 
+# print(f"ERR: {crs_output.error_resolution_rate}")
+# print(f"RP: {crs_output.regression_penalty}")
+# print(f"TFP: {crs_output.targeted_fix_precision}")
+# print(f"CRS: {crs_output.correction_reasoning_score}")
+# ```
+# 
+# ### 3. Judge Reliability Metrics
+# ```python
+# from src.metrics.judge_metrics import JudgeReliabilityCalculator
+# 
+# calc = JudgeReliabilityCalculator()
+# judge_metrics = calc.compute_jrs(error_sets, scores)
+# 
+# for i, metrics in enumerate(judge_metrics):
+#     print(f"Judge {i}:")
+#     print(f"  ESA: {metrics['esa']}")
+#     print(f"  JRS: {metrics['jrs']}")
+#     print(f"  Z-score: {metrics['z_score']}")
+# ```
+# 
+# ## Testing Your Migration
+# 
+# ### 1. Unit Tests
+# ```bash
+# pytest tests/ -v
+# ```
+# 
+# ### 2. Compare Results
+# Run the same algorithm with both versions and compare:
+# 
+# ```bash
+# # v1 results
+# python old_agent.py > v1_results.txt
+# 
+# # v2 results
+# python scripts/run_single.py \
+#   --algorithm "..." \
+#   --assumptions "..." > v2_results.txt
+# 
+# # Compare
+# diff v1_results.txt v2_results.txt
+# ```
+# 
+# ### 3. Validate Metrics
+# The v2 system includes additional metrics. Verify they're computed correctly:
+# 
+# ```bash
+# python scripts/analyze_results.py \
+#   --csv results/processed_v2.csv \
+#   --json results/batch_execution_v2.json
+# ```
+# 
+# ## Troubleshooting
+# 
+# ### Issue: Import Errors
+# **Solution:** Ensure you've installed the package:
+# ```bash
+# pip install -e .
+# ```
+# 
+# ### Issue: API Key Not Found
+# **Solution:** Check your .env file:
+# ```bash
+# cat .env | grep NVIDIA_API_KEY
+# ```
+# 
+# ### Issue: Different Results from v1
+# **Expected:** v2 includes multi-judge evaluation, which may give slightly different
+# scores due to consensus mechanisms. The core proof quality should be similar or better.
+# 
+# ### Issue: Slow Performance
+# **Solution:** Multi-judge evaluation is more thorough but slower. For faster iteration:
+# ```bash
+# python scripts/run_single.py --algorithm "..." --assumptions "..."
+# # (without --multi-judge flag uses single judge)
+# ```
+# 
+# ## Getting Help
+# 
+# - Check `README.md` for full documentation
+# - Review example outputs in `tests/fixtures/`
+# - Open an issue if you find bugs
+# 
+# ## Rollback Plan
+# 
+# If you need to rollback to v1:
+# 1. Keep your old `agent.py` and `batch_processor.py` files
+# 2. Use a separate virtual environment for v2
+# 3. Test v2 thoroughly before decommissioning v1
+# 
+# ---
