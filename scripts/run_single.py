@@ -1,20 +1,17 @@
 # ============================================================================
-# File: scripts/run_single.py
+# File: scripts/run_single.py (UPDATED)
 # ============================================================================
-"""Script to run single proof generation and evaluation."""
+"""Script to run single proof generation with complete tracking."""
 
 import argparse
 import json
-import os
 from pathlib import Path
 from dotenv import load_dotenv
-
-# Add src to path
 import sys
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.graph.workflow import ProofWorkflow
-from src.utils.logger import StructuredLogger
 
 
 def main():
@@ -32,9 +29,6 @@ def main():
     # Load environment
     load_dotenv()
     
-    # Setup logger
-    logger = StructuredLogger(log_dir=args.output)
-    
     # Setup workflow
     evaluator_models = args.judges if args.judges else [args.model]
     
@@ -42,32 +36,37 @@ def main():
         prover_model=args.model,
         evaluator_models=evaluator_models,
         use_multi_judge=args.multi_judge,
-        max_iterations=args.max_iter
+        max_iterations=args.max_iter,
+        output_dir=args.output
     )
     
-    # Run
-    print("Starting proof generation and evaluation...")
-    final_state = workflow.run(args.algorithm, args.assumptions)
+    # Run with tracking
+    final_state, tracker = workflow.run(args.algorithm, args.assumptions)
     
-    # Save results
-    output_dir = Path(args.output)
-    output_dir.mkdir(exist_ok=True)
+    # Print summary
+    print("\n" + "="*60)
+    print("EXECUTION SUMMARY")
+    print("="*60)
     
-    # Save final proof
-    if final_state and "current_proof" in final_state:
-        proof_path = output_dir / "final_proof.tex"
-        with open(proof_path, "w") as f:
-            f.write(final_state["current_proof"])
-        print(f"Proof saved to {proof_path}")
+    log = tracker.get_log()
     
-    # Save full state
-    state_path = output_dir / "final_state.json"
-    with open(state_path, "w") as f:
-        json.dump(final_state, f, indent=2, default=str)
-    print(f"State saved to {state_path}")
+    print(f"\nAlgorithm: {log['algorithm_description'][:60]}...")
+    print(f"Total Iterations: {log['final_results']['total_iterations']}")
+    print(f"Final Verdict: {log['final_results']['verdict']}")
+    print(f"Convergence: {'Yes' if log['final_results']['convergence_achieved'] else 'No'}")
     
-    logger.save()
-    print(f"\n✅ Complete! Verdict: {final_state.get('verdict', 'UNKNOWN')}")
+    if "statistics" in log:
+        stats = log["statistics"]
+        print(f"\nTotal Errors Identified: {stats['total_errors_identified']}")
+        print(f"Error Breakdown:")
+        for error_type, count in stats["errors_by_type"].items():
+            if count > 0:
+                print(f"  - {error_type}: {count}")
+        
+        if stats["crs_progression"]:
+            print(f"\nCRS Progression: {' → '.join([f'{x:.2f}' for x in stats['crs_progression']])}")
+    
+    print("\n" + "="*60)
 
 
 if __name__ == "__main__":

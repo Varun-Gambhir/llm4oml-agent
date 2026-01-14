@@ -1,7 +1,7 @@
 # ============================================================================
-# File: scripts/run_batch.py
+# File: scripts/run_batch.py (COMPLETE VERSION)
 # ============================================================================
-"""Batch processor for multiple algorithms with v2.0 metrics."""
+"""Batch processor with complete state tracking and CSV generation."""
 
 import pandas as pd
 import json
@@ -9,225 +9,484 @@ import argparse
 from pathlib import Path
 from typing import Dict, Any
 from dotenv import load_dotenv
-
 import sys
+from datetime import datetime
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.graph.workflow import ProofWorkflow
-from src.utils.logger import StructuredLogger
 
 
 class BatchProcessor:
-    """Process multiple algorithms with full v2.0 metric tracking."""
+    """Process multiple algorithms with full tracking and CSV output."""
     
     def __init__(
         self,
         input_csv: str,
-        output_csv: str,
-        output_json: str,
+        output_dir: str,
         prover_model: str,
         evaluator_models: list,
         use_multi_judge: bool,
         max_iterations: int
     ):
         self.input_csv = input_csv
-        self.output_csv = output_csv
-        self.output_json = output_json
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(exist_ok=True, parents=True)
         
-        self.workflow = ProofWorkflow(
-            prover_model=prover_model,
-            evaluator_models=evaluator_models,
-            use_multi_judge=use_multi_judge,
-            max_iterations=max_iterations
-        )
+        # Output files
+        self.output_csv = self.output_dir / "results.csv"
+        self.output_json = self.output_dir / "batch_execution_log.json"
+        self.summary_txt = self.output_dir / "summary.txt"
         
-        self.results_log = []
+        self.prover_model = prover_model
+        self.evaluator_models = evaluator_models
+        self.use_multi_judge = use_multi_judge
+        self.max_iterations = max_iterations
+        
+        # Batch-level log
+        self.batch_log = {
+            "metadata": {
+                "start_time": datetime.now().isoformat(),
+                "input_file": str(input_csv),
+                "configuration": {
+                    "prover_model": prover_model,
+                    "evaluator_models": evaluator_models,
+                    "use_multi_judge": use_multi_judge,
+                    "max_iterations": max_iterations
+                }
+            },
+            "algorithms": []
+        }
     
     def process(self):
         """Process all algorithms in CSV."""
-        print(f"--- Starting Batch Processing: {self.input_csv} ---")
+        print(f"\n{'='*80}")
+        print(f"BATCH PROCESSING STARTED")
+        print(f"Input: {self.input_csv}")
+        print(f"Output Directory: {self.output_dir}")
+        print(f"{'='*80}\n")
         
         # Load CSV
         try:
             df = pd.read_csv(self.input_csv, header=1)
         except Exception as e:
-            print(f"Error reading CSV: {e}")
+            print(f"❌ Error reading CSV: {e}")
             return
         
         # Filter empty rows
         df = df[df['Problem Statement'].notna()].reset_index(drop=True)
-        print(f"Found {len(df)} algorithms to process.")
+        total_algos = len(df)
+        print(f"📊 Found {total_algos} algorithms to process.\n")
         
-        # Add new v2.0 columns
-        self._add_v2_columns(df)
+        # Prepare output dataframe
+        results_df = self._prepare_results_dataframe(df)
         
         # Process each row
         for index, row in df.iterrows():
+            print(f"\n{'#'*80}")
+            print(f"# Processing Algorithm {index + 1}/{total_algos}")
+            print(f"{'#'*80}")
+            
             try:
-                self._process_row(index, row, df)
+                self._process_single_algorithm(index, row, results_df)
                 
-                # Save progress after each row
-                df.to_csv(self.output_csv, index=False)
-                with open(self.output_json, "w", encoding="utf-8") as f:
-                    json.dump(self.results_log, f, indent=2, default=str)
-                    
+                # Save progress after each algorithm
+                results_df.to_csv(self.output_csv, index=False)
+                self._save_batch_log()
+                
+                print(f"✓ Progress saved. Completed {index + 1}/{total_algos}")
+                
             except Exception as e:
-                print(f"Error processing row {index}: {e}")
-                self.results_log.append({
+                print(f"❌ Error processing row {index}: {e}")
+                self.batch_log["algorithms"].append({
                     "row_index": index,
-                    "error": str(e)
+                    "error": str(e),
+                    "status": "failed"
                 })
+                
+                # Mark as failed in CSV
+                results_df.at[index, 'Processing_Status'] = 'FAILED'
+                results_df.at[index, 'Error_Message'] = str(e)
+                results_df.to_csv(self.output_csv, index=False)
         
-        print(f"\n✅ Batch Processing Complete!")
-        print(f"Results: {self.output_csv}")
-        print(f"Detailed logs: {self.output_json}")
+        # Finalize
+        self._finalize_batch(results_df)
+        
+        print(f"\n{'='*80}")
+        print(f"✅ BATCH PROCESSING COMPLETE")
+        print(f"{'='*80}")
+        print(f"Results CSV: {self.output_csv}")
+        print(f"Execution Log: {self.output_json}")
+        print(f"Summary: {self.summary_txt}")
+        print(f"{'='*80}\n")
     
-    def _add_v2_columns(self, df: pd.DataFrame):
-        """Add v2.0 metric columns to dataframe."""
+    def _prepare_results_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Prepare results dataframe with all necessary columns."""
+        results_df = df.copy()
+        
+        # Add V2.0 columns
         new_columns = {
+            # Processing Status
+            'Processing_Status': 'PENDING',
+            'Error_Message': '',
+            'Processing_Time_Seconds': 0.0,
+            
+            # V1 Metrics (First Iteration)
+            'V1_Hallucination_Error': '',
+            'V1_Missing_Step': '',
+            'V1_Operator_Error': '',
+            'V1_Completeness_Score': 0,
+            'V1_Assumption_Score': 0,
+            'V1_Verdict': '',
+            
+            # V2 Metrics (Final Iteration)
+            'V2_Hallucination_Error': '',
+            'V2_Missing_Step': '',
+            'V2_Operator_Error': '',
+            'V2_Completeness_Score': 0,
+            'V2_Assumption_Score': 0,
+            'V2_Verdict': '',
+            'Overall_Score': 0,
+            
+            # Iteration Information
+            'Total_Iterations': 0,
+            'Converged': False,
+            
             # CRS Metrics (per iteration)
-            'CRS_Iter1': 0.0,
-            'CRS_Iter2': 0.0,
-            'CRS_Iter3': 0.0,
+            'CRS_Iter_1': 0.0,
+            'CRS_Iter_2': 0.0,
+            'CRS_Iter_3': 0.0,
             'CRS_Final': 0.0,
             
-            # CRS Components (final iteration)
+            # CRS Components (final)
             'ERR_Final': 0.0,
             'RP_Final': 0.0,
             'TFP_Final': 0.0,
             
-            # Error tracking
+            # Error Tracking
+            'Total_Errors_V1': 0,
+            'Total_Errors_Final': 0,
             'Errors_Fixed': 0,
             'Errors_Introduced': 0,
             'Net_Improvement': 0,
             
-            # Multi-judge metrics
+            # Multi-Judge Metrics
             'Num_Judges': 0,
             'Mean_JRS': 0.0,
-            'Outlier_Judges': "",
+            'Outlier_Judges': '',
             'Judge_Agreement_ESA': 0.0,
-            'Score_Consistency_SC': 0.0,
+            'Weighted_CFRS': 0.0,
             
-            # Weighted consensus
-            'Weighted_CFRS': 0.0
+            # Proof Information
+            'Final_Proof_Length': 0,
+            'Proof_Length_Growth': 0,
+            
+            # Feedback Summary
+            'Final_Feedback_Preview': '',
+            
+            # Model Information
+            'Model_Used': ''
         }
         
         for col, default in new_columns.items():
-            if col not in df.columns:
-                df[col] = default
+            if col not in results_df.columns:
+                results_df[col] = default
+        
+        return results_df
     
-    def _process_row(self, index: int, row: pd.Series, df: pd.DataFrame):
-        """Process a single algorithm."""
+    def _process_single_algorithm(self, index: int, row: pd.Series, results_df: pd.DataFrame):
+        """Process a single algorithm and update results."""
         algo_text = row['Problem Statement']
         assump_text = row['Assumptions Used']
         
-        print(f"\n=== Processing Row {index + 1}/{len(df)} ===")
-        print(f"Algorithm: {algo_text[:60]}...")
+        print(f"Algorithm: {algo_text[:70]}...")
+        print(f"Assumptions: {assump_text[:70]}...")
+        
+        # Create algorithm-specific output directory
+        algo_dir = self.output_dir / f"algorithm_{index:03d}"
+        algo_dir.mkdir(exist_ok=True)
+        
+        # Track processing time
+        import time
+        start_time = time.time()
         
         # Run workflow
-        final_state = self.workflow.run(algo_text, assump_text)
+        workflow = ProofWorkflow(
+            prover_model=self.prover_model,
+            evaluator_models=self.evaluator_models,
+            use_multi_judge=self.use_multi_judge,
+            max_iterations=self.max_iterations,
+            output_dir=str(algo_dir)
+        )
         
-        # Log detailed results
-        row_log = {
+        final_state, tracker = workflow.run(algo_text, assump_text)
+        
+        processing_time = time.time() - start_time
+        
+        # Get execution log
+        exec_log = tracker.get_log()
+        
+        # Update results dataframe
+        self._update_results_row(index, results_df, exec_log, final_state, processing_time)
+        
+        # Save to batch log
+        self.batch_log["algorithms"].append({
             "row_index": index,
             "algorithm": algo_text,
-            "final_verdict": final_state.get("verdict", "UNKNOWN"),
-            "iterations": []
-        }
-        
-        # Extract iteration data
-        # Note: In real implementation, you'd track this during workflow execution
-        # For now, we'll extract from final_state
-        
-        # Update V1 columns (first iteration)
-        if final_state.get("iteration", 0) >= 1:
-            metrics_v1 = final_state.get("metrics", {})
-            self._update_v1_columns(df, index, metrics_v1)
-        
-        # Update V2 columns (final iteration)
-        self._update_v2_columns(df, index, final_state)
-        
-        # Update CRS columns
-        self._update_crs_columns(df, index, final_state)
-        
-        # Update multi-judge columns
-        self._update_judge_columns(df, index, final_state)
-        
-        self.results_log.append(row_log)
+            "status": "completed",
+            "processing_time": processing_time,
+            "final_verdict": final_state.get("verdict"),
+            "iterations": exec_log.get("final_results", {}).get("total_iterations", 0),
+            "output_directory": str(algo_dir),
+            "execution_log": exec_log  # Full execution log
+        })
     
-    def _update_v1_columns(self, df: pd.DataFrame, index: int, metrics: Dict[str, Any]):
-        """Update V1 (first iteration) columns."""
+    def _update_results_row(
+        self,
+        index: int,
+        df: pd.DataFrame,
+        exec_log: Dict,
+        final_state: Dict,
+        processing_time: float
+    ):
+        """Update a single row in results dataframe."""
         to_yn = lambda x: "yes" if x else "no"
         
-        df.at[index, 'Hallucination Error (HA) (yes/no)'] = to_yn(metrics.get("HA", False))
-        df.at[index, 'Missing Step (MS) (yes/no)'] = to_yn(metrics.get("MS", False))
-        df.at[index, 'Operator Error (OP) (yes/no)'] = to_yn(metrics.get("OP", False))
-        df.at[index, 'Completeness Score (0–5)'] = metrics.get("completeness_score", 0)
-        df.at[index, 'Assumption Use Score (0–5)'] = metrics.get("assumption_use_score", 0)
-        df.at[index, 'Model for evaluation'] = "Multi-Judge Ensemble"
-    
-    def _update_v2_columns(self, df: pd.DataFrame, index: int, state: Dict[str, Any]):
-        """Update V2 (final iteration) columns."""
-        metrics = state.get("metrics", {})
-        to_yn = lambda x: "yes" if x else "no"
+        # Processing Status
+        df.at[index, 'Processing_Status'] = 'COMPLETED'
+        df.at[index, 'Processing_Time_Seconds'] = round(processing_time, 2)
+        df.at[index, 'Model_Used'] = f"Prover: {self.prover_model}, Judges: {len(self.evaluator_models)}"
         
-        if state.get("iteration", 0) > 1:
-            df.at[index, 'Hallucination Error (HA) (yes/no).1'] = to_yn(metrics.get("HA", False))
-            df.at[index, 'Missing Step (MS) (yes/no).1'] = to_yn(metrics.get("MS", False))
-            df.at[index, 'Operator Error (OP) (yes/no).1'] = to_yn(metrics.get("OP", False))
-            df.at[index, 'Completeness Score (0–5).1'] = metrics.get("completeness_score", 0)
-            df.at[index, 'Assumption Use Score (0–5).1'] = metrics.get("assumption_use_score", 0)
+        # Iteration Information
+        iterations = exec_log.get("iterations", [])
+        df.at[index, 'Total_Iterations'] = len(iterations)
+        df.at[index, 'Converged'] = exec_log.get("final_results", {}).get("convergence_achieved", False)
         
-        # Overall score based on verdict
-        verdict_scores = {"PASS": 5, "PASS_MINOR": 4, "CONDITIONAL": 3, "FAIL": 2, "REJECT": 1}
-        df.at[index, 'Overall Score (0–5)'] = verdict_scores.get(state.get("verdict", "FAIL"), 0)
-        
-        # Comments
-        feedback = state.get("feedback", "")
-        df.at[index, 'Comments on LLM Judge'] = f"Verdict: {state.get('verdict')}. {feedback[:100]}..."
-    
-    def _update_crs_columns(self, df: pd.DataFrame, index: int, state: Dict[str, Any]):
-        """Update CRS metric columns."""
-        correction_metrics = state.get("correction_metrics")
-        
-        if correction_metrics:
-            df.at[index, 'CRS_Final'] = correction_metrics.get("correction_reasoning_score", 0.0)
-            df.at[index, 'ERR_Final'] = correction_metrics.get("error_resolution_rate", 0.0)
-            df.at[index, 'RP_Final'] = correction_metrics.get("regression_penalty", 0.0)
-            df.at[index, 'TFP_Final'] = correction_metrics.get("targeted_fix_precision", 0.0)
+        # V1 Metrics (First Iteration)
+        if len(iterations) >= 1 and "evaluator" in iterations[0]["nodes"]:
+            v1_eval = iterations[0]["nodes"]["evaluator"]
+            v1_metrics = v1_eval.get("metrics", {})
             
-            errors_fixed = correction_metrics.get("errors_fixed", 0)
-            errors_introduced = correction_metrics.get("errors_introduced", 0)
+            df.at[index, 'V1_Hallucination_Error'] = to_yn(v1_metrics.get("HA", False))
+            df.at[index, 'V1_Missing_Step'] = to_yn(v1_metrics.get("MS", False))
+            df.at[index, 'V1_Operator_Error'] = to_yn(v1_metrics.get("OP", False))
+            df.at[index, 'V1_Completeness_Score'] = v1_metrics.get("completeness_score", 0)
+            df.at[index, 'V1_Assumption_Score'] = v1_metrics.get("assumption_use_score", 0)
+            df.at[index, 'V1_Verdict'] = v1_eval.get("verdict", "")
             
-            df.at[index, 'Errors_Fixed'] = errors_fixed
-            df.at[index, 'Errors_Introduced'] = errors_introduced
-            df.at[index, 'Net_Improvement'] = errors_fixed - errors_introduced
+            # Count V1 errors
+            v1_error_set = v1_eval.get("error_set", {})
+            total_v1_errors = sum(len(v1_error_set.get(k, [])) for k in 
+                                  ["hallucinations", "missing_steps", "operator_errors", "assumption_violations"])
+            df.at[index, 'Total_Errors_V1'] = total_v1_errors
+        
+        # V2 Metrics (Final Iteration)
+        if len(iterations) >= 1 and "evaluator" in iterations[-1]["nodes"]:
+            vf_eval = iterations[-1]["nodes"]["evaluator"]
+            vf_metrics = vf_eval.get("metrics", {})
+            
+            df.at[index, 'V2_Hallucination_Error'] = to_yn(vf_metrics.get("HA", False))
+            df.at[index, 'V2_Missing_Step'] = to_yn(vf_metrics.get("MS", False))
+            df.at[index, 'V2_Operator_Error'] = to_yn(vf_metrics.get("OP", False))
+            df.at[index, 'V2_Completeness_Score'] = vf_metrics.get("completeness_score", 0)
+            df.at[index, 'V2_Assumption_Score'] = vf_metrics.get("assumption_use_score", 0)
+            df.at[index, 'V2_Verdict'] = vf_eval.get("verdict", "")
+            
+            # Overall score
+            verdict_scores = {"PASS": 5, "PASS_MINOR": 4, "CONDITIONAL": 3, "FAIL": 2, "REJECT": 1}
+            df.at[index, 'Overall_Score'] = verdict_scores.get(vf_eval.get("verdict", "FAIL"), 0)
+            
+            # Count final errors
+            vf_error_set = vf_eval.get("error_set", {})
+            total_vf_errors = sum(len(vf_error_set.get(k, [])) for k in 
+                                  ["hallucinations", "missing_steps", "operator_errors", "assumption_violations"])
+            df.at[index, 'Total_Errors_Final'] = total_vf_errors
+            
+            # Feedback preview
+            feedback = vf_eval.get("feedback", "")
+            df.at[index, 'Final_Feedback_Preview'] = feedback[:200] + "..." if len(feedback) > 200 else feedback
+        
+        # CRS Metrics (for each iteration that has them)
+        for i, iteration in enumerate(iterations):
+            if "evaluator" in iteration["nodes"]:
+                corr_metrics = iteration["nodes"]["evaluator"].get("correction_metrics")
+                if corr_metrics:
+                    crs_value = corr_metrics.get("correction_reasoning_score", 0.0)
+                    if i < 3:  # Only store first 3
+                        df.at[index, f'CRS_Iter_{i+1}'] = round(crs_value, 3)
+                    
+                    # Always update final
+                    if i == len(iterations) - 1:
+                        df.at[index, 'CRS_Final'] = round(crs_value, 3)
+                        df.at[index, 'ERR_Final'] = round(corr_metrics.get("error_resolution_rate", 0.0), 3)
+                        df.at[index, 'RP_Final'] = round(corr_metrics.get("regression_penalty", 0.0), 3)
+                        df.at[index, 'TFP_Final'] = round(corr_metrics.get("targeted_fix_precision", 0.0), 3)
+                        
+                        df.at[index, 'Errors_Fixed'] = corr_metrics.get("errors_fixed", 0)
+                        df.at[index, 'Errors_Introduced'] = corr_metrics.get("errors_introduced", 0)
+        
+        # Net improvement
+        df.at[index, 'Net_Improvement'] = df.at[index, 'Errors_Fixed'] - df.at[index, 'Errors_Introduced']
+        
+        # Multi-Judge Metrics (from final iteration)
+        if len(iterations) >= 1 and "evaluator" in iterations[-1]["nodes"]:
+            final_eval = iterations[-1]["nodes"]["evaluator"]
+            judge_evals = final_eval.get("judge_evaluations", [])
+            judge_reliability = final_eval.get("judge_reliability", [])
+            
+            if judge_evals:
+                df.at[index, 'Num_Judges'] = len(judge_evals)
+                df.at[index, 'Weighted_CFRS'] = round(final_eval.get("metrics", {}).get("weighted_cfrs", 0.0), 3)
+            
+            if judge_reliability:
+                df.at[index, 'Mean_JRS'] = round(sum(judge_reliability) / len(judge_reliability), 3)
+        
+        # Proof Information
+        if len(iterations) >= 1:
+            if "prover" in iterations[0]["nodes"]:
+                initial_length = iterations[0]["nodes"]["prover"].get("proof_length", 0)
+            else:
+                initial_length = 0
+            
+            if "prover" in iterations[-1]["nodes"]:
+                final_length = iterations[-1]["nodes"]["prover"].get("proof_length", 0)
+            else:
+                final_length = 0
+            
+            df.at[index, 'Final_Proof_Length'] = final_length
+            df.at[index, 'Proof_Length_Growth'] = final_length - initial_length
     
-    def _update_judge_columns(self, df: pd.DataFrame, index: int, state: Dict[str, Any]):
-        """Update multi-judge reliability columns."""
-        judge_evals = state.get("judge_evaluations", [])
-        judge_reliability = state.get("judge_reliability", [])
+    def _save_batch_log(self):
+        """Save batch execution log."""
+        with open(self.output_json, "w", encoding="utf-8") as f:
+            json.dump(self.batch_log, f, indent=2, default=str)
+    
+    def _finalize_batch(self, results_df: pd.DataFrame):
+        """Finalize batch processing with summary."""
+        self.batch_log["metadata"]["end_time"] = datetime.now().isoformat()
+        self.batch_log["metadata"]["total_algorithms"] = len(results_df)
+        self.batch_log["metadata"]["completed"] = (results_df['Processing_Status'] == 'COMPLETED').sum()
+        self.batch_log["metadata"]["failed"] = (results_df['Processing_Status'] == 'FAILED').sum()
         
-        if judge_evals:
-            df.at[index, 'Num_Judges'] = len(judge_evals)
-            df.at[index, 'Weighted_CFRS'] = state.get("metrics", {}).get("weighted_cfrs", 0.0)
+        # Save final batch log
+        self._save_batch_log()
         
-        if judge_reliability:
-            df.at[index, 'Mean_JRS'] = sum(judge_reliability) / len(judge_reliability)
+        # Generate summary report
+        self._generate_summary(results_df)
+    
+    def _generate_summary(self, df: pd.DataFrame):
+        """Generate text summary of batch results."""
+        summary_lines = []
+        summary_lines.append("="*80)
+        summary_lines.append("BATCH PROCESSING SUMMARY")
+        summary_lines.append("="*80)
+        summary_lines.append(f"\nGenerated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        summary_lines.append(f"Input File: {self.input_csv}")
+        summary_lines.append(f"Output Directory: {self.output_dir}")
+        
+        summary_lines.append(f"\n{'-'*80}")
+        summary_lines.append("CONFIGURATION")
+        summary_lines.append(f"{'-'*80}")
+        summary_lines.append(f"Prover Model: {self.prover_model}")
+        summary_lines.append(f"Evaluator Models: {', '.join(self.evaluator_models)}")
+        summary_lines.append(f"Multi-Judge: {self.use_multi_judge}")
+        summary_lines.append(f"Max Iterations: {self.max_iterations}")
+        
+        summary_lines.append(f"\n{'-'*80}")
+        summary_lines.append("PROCESSING STATISTICS")
+        summary_lines.append(f"{'-'*80}")
+        summary_lines.append(f"Total Algorithms: {len(df)}")
+        summary_lines.append(f"Completed: {(df['Processing_Status'] == 'COMPLETED').sum()}")
+        summary_lines.append(f"Failed: {(df['Processing_Status'] == 'FAILED').sum()}")
+        summary_lines.append(f"Total Processing Time: {df['Processing_Time_Seconds'].sum():.2f} seconds")
+        summary_lines.append(f"Average Time per Algorithm: {df['Processing_Time_Seconds'].mean():.2f} seconds")
+        
+        completed_df = df[df['Processing_Status'] == 'COMPLETED']
+        
+        if len(completed_df) > 0:
+            summary_lines.append(f"\n{'-'*80}")
+            summary_lines.append("VERDICT DISTRIBUTION")
+            summary_lines.append(f"{'-'*80}")
+            verdict_counts = completed_df['V2_Verdict'].value_counts()
+            for verdict, count in verdict_counts.items():
+                pct = count / len(completed_df) * 100
+                summary_lines.append(f"{verdict:15s}: {count:3d} ({pct:5.1f}%)")
             
-            # Find outliers (simplified - assumes z-score > 2)
-            # In full implementation, extract from consensus
-            outliers = state.get("judge_evaluations", [])
-            if outliers:
-                outlier_ids = [e["judge_id"] for e in outliers[:1]]  # Placeholder
-                df.at[index, 'Outlier_Judges'] = ", ".join(outlier_ids) if outlier_ids else "None"
+            summary_lines.append(f"\n{'-'*80}")
+            summary_lines.append("CONVERGENCE STATISTICS")
+            summary_lines.append(f"{'-'*80}")
+            converged = completed_df['Converged'].sum()
+            summary_lines.append(f"Converged (PASS/PASS_MINOR): {converged} ({converged/len(completed_df)*100:.1f}%)")
+            summary_lines.append(f"Average Iterations: {completed_df['Total_Iterations'].mean():.2f}")
+            
+            summary_lines.append(f"\n{'-'*80}")
+            summary_lines.append("CORRECTION METRICS (CRS)")
+            summary_lines.append(f"{'-'*80}")
+            summary_lines.append(f"Mean CRS: {completed_df['CRS_Final'].mean():.3f}")
+            summary_lines.append(f"Mean ERR: {completed_df['ERR_Final'].mean():.3f}")
+            summary_lines.append(f"Mean RP: {completed_df['RP_Final'].mean():.3f}")
+            summary_lines.append(f"Mean TFP: {completed_df['TFP_Final'].mean():.3f}")
+            
+            crs_strong = (completed_df['CRS_Final'] >= 0.7).sum()
+            crs_partial = ((completed_df['CRS_Final'] >= 0.4) & (completed_df['CRS_Final'] < 0.7)).sum()
+            crs_weak = (completed_df['CRS_Final'] < 0.4).sum()
+            
+            summary_lines.append(f"\nCRS Distribution:")
+            summary_lines.append(f"  Strong (≥0.7):     {crs_strong:3d} ({crs_strong/len(completed_df)*100:5.1f}%)")
+            summary_lines.append(f"  Partial (0.4-0.7): {crs_partial:3d} ({crs_partial/len(completed_df)*100:5.1f}%)")
+            summary_lines.append(f"  Weak (<0.4):       {crs_weak:3d} ({crs_weak/len(completed_df)*100:5.1f}%)")
+            
+            summary_lines.append(f"\n{'-'*80}")
+            summary_lines.append("ERROR RESOLUTION")
+            summary_lines.append(f"{'-'*80}")
+            summary_lines.append(f"Total Errors Fixed: {completed_df['Errors_Fixed'].sum()}")
+            summary_lines.append(f"Total Errors Introduced: {completed_df['Errors_Introduced'].sum()}")
+            summary_lines.append(f"Net Improvement: {completed_df['Net_Improvement'].sum()}")
+            summary_lines.append(f"Average Net Improvement per Algorithm: {completed_df['Net_Improvement'].mean():.2f}")
+            
+            if self.use_multi_judge:
+                summary_lines.append(f"\n{'-'*80}")
+                summary_lines.append("MULTI-JUDGE STATISTICS")
+                summary_lines.append(f"{'-'*80}")
+                summary_lines.append(f"Number of Judges: {completed_df['Num_Judges'].max()}")
+                summary_lines.append(f"Mean Judge Reliability (JRS): {completed_df['Mean_JRS'].mean():.3f}")
+                summary_lines.append(f"Mean Weighted CFRS: {completed_df['Weighted_CFRS'].mean():.3f}")
+            
+            summary_lines.append(f"\n{'-'*80}")
+            summary_lines.append("TOP 5 ALGORITHMS BY CRS")
+            summary_lines.append(f"{'-'*80}")
+            top5 = completed_df.nlargest(5, 'CRS_Final')
+            for i, (idx, row) in enumerate(top5.iterrows(), 1):
+                algo = row['Problem Statement'][:50] + "..."
+                summary_lines.append(f"{i}. CRS={row['CRS_Final']:.3f}, Score={row['Overall_Score']}, Iter={row['Total_Iterations']}")
+                summary_lines.append(f"   {algo}")
+            
+            summary_lines.append(f"\n{'-'*80}")
+            summary_lines.append("BOTTOM 5 ALGORITHMS BY CRS")
+            summary_lines.append(f"{'-'*80}")
+            bottom5 = completed_df.nsmallest(5, 'CRS_Final')
+            for i, (idx, row) in enumerate(bottom5.iterrows(), 1):
+                algo = row['Problem Statement'][:50] + "..."
+                summary_lines.append(f"{i}. CRS={row['CRS_Final']:.3f}, Score={row['Overall_Score']}, Iter={row['Total_Iterations']}")
+                summary_lines.append(f"   {algo}")
+        
+        summary_lines.append(f"\n{'='*80}")
+        summary_lines.append("END OF SUMMARY")
+        summary_lines.append(f"{'='*80}\n")
+        
+        # Write to file
+        summary_text = "\n".join(summary_lines)
+        with open(self.summary_txt, "w", encoding="utf-8") as f:
+            f.write(summary_text)
+        
+        # Also print to console
+        print("\n" + summary_text)
 
 
 def main():
     parser = argparse.ArgumentParser(description="Batch process convergence proofs")
-    parser.add_argument("--input", default="LLM for Convergence - GPT 5.csv", help="Input CSV")
-    parser.add_argument("--output", default="processed_results_v2.csv", help="Output CSV")
-    parser.add_argument("--json", default="batch_execution_v2.json", help="JSON log")
+    parser.add_argument("--input", required=True, help="Input CSV file")
+    parser.add_argument("--output", default="batch_results", help="Output directory")
     parser.add_argument("--model", default="openai/gpt-oss-120b", help="Prover model")
     parser.add_argument("--judges", nargs="+", help="List of judge models")
     parser.add_argument("--multi-judge", action="store_true", help="Use multi-judge")
@@ -244,8 +503,7 @@ def main():
     # Run batch processor
     processor = BatchProcessor(
         input_csv=args.input,
-        output_csv=args.output,
-        output_json=args.json,
+        output_dir=args.output,
         prover_model=args.model,
         evaluator_models=evaluator_models,
         use_multi_judge=args.multi_judge,
