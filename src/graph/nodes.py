@@ -1,7 +1,7 @@
 # ============================================================================
-# File: src/graph/nodes.py
+# File: src/graph/nodes.py (UPDATED)
 # ============================================================================
-"""Node implementations for LangGraph workflow."""
+"""Node implementations for LangGraph workflow with provider abstraction."""
 
 from typing import Dict, Any
 from ..models.types import AgentState
@@ -9,9 +9,7 @@ from ..agents.prover_agent import ProverAgent
 from ..evaluators.multi_judge import MultiJudgeEvaluator
 from ..evaluators.single_judge import SingleJudge
 from ..metrics.correction_metrics import CorrectionMetricsCalculator
-from ..metrics.error_tracker import ErrorTracker
 from ..utils.state import StateManager
-from ..utils.parsers import ResponseParser
 
 
 class WorkflowNodes:
@@ -19,21 +17,46 @@ class WorkflowNodes:
     
     def __init__(
         self,
+        provider_name: str,
         prover_model: str,
         evaluator_models: list,
+        api_key: str = None,
         use_multi_judge: bool = True,
-        temperature: float = 0.5
+        temperature: float = 0.5,
+        timeout: int = 600,
+        max_retries: int = 3
     ):
-        self.prover = ProverAgent(prover_model, temperature=temperature)
+        self.prover = ProverAgent(
+            provider_name=provider_name,
+            model_name=prover_model,
+            api_key=api_key,
+            temperature=temperature,
+            timeout=timeout,
+            max_retries=max_retries
+        )
         
         if use_multi_judge:
-            self.evaluator = MultiJudgeEvaluator(evaluator_models, temperature=temperature)
+            self.evaluator = MultiJudgeEvaluator(
+                provider_name=provider_name,
+                judge_models=evaluator_models,
+                api_key=api_key,
+                temperature=temperature,
+                timeout=timeout,
+                max_retries=max_retries
+            )
         else:
-            self.evaluator = SingleJudge(evaluator_models[0], "single_judge", temperature)
+            self.evaluator = SingleJudge(
+                provider_name=provider_name,
+                model_name=evaluator_models[0],
+                judge_id="single_judge",
+                api_key=api_key,
+                temperature=temperature,
+                timeout=timeout,
+                max_retries=max_retries
+            )
         
         self.use_multi_judge = use_multi_judge
         self.correction_calc = CorrectionMetricsCalculator()
-        self.error_tracker = ErrorTracker()
     
     def prover_node(self, state: AgentState) -> Dict[str, Any]:
         """Generate or correct proof."""

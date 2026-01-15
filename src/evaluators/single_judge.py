@@ -1,36 +1,43 @@
 # ============================================================================
-# File: src/evaluators/single_judge.py
+# File: src/evaluators/single_judge.py (UPDATED)
 # ============================================================================
-"""Single LLM judge evaluator."""
+"""Single LLM judge evaluator with provider abstraction."""
 
 import time
 from typing import Optional
-from langchain_nvidia_ai_endpoints import ChatNVIDIA
-from langchain_core.messages import HumanMessage
 from langchain_core.output_parsers import PydanticOutputParser
 
 from .base_evaluator import BaseEvaluator
 from ..models.schemas import EvaluationMetrics
 from ..utils.prompts import PromptManager
+from ..llm.provider_factory import LLMProviderFactory
 
 
 class SingleJudge(BaseEvaluator):
-    """Single LLM evaluator."""
+    """Single LLM evaluator with retry logic."""
     
     def __init__(
         self,
+        provider_name: str,
         model_name: str,
         judge_id: str,
+        api_key: str = None,
         temperature: float = 0.5,
-        max_tokens: int = 8192
+        max_tokens: int = 8192,
+        timeout: int = 600,
+        max_retries: int = 3
     ):
         super().__init__(model_name, judge_id)
         
-        self.llm = ChatNVIDIA(
-            model=model_name,
+        self.provider_name = provider_name
+        self.llm = LLMProviderFactory.create(
+            provider_name=provider_name,
+            model_name=model_name,
+            api_key=api_key,
             temperature=temperature,
             max_tokens=max_tokens,
-            top_p=1
+            timeout=timeout,
+            max_retries=max_retries
         )
         
         self.prompt_manager = PromptManager()
@@ -46,18 +53,14 @@ class SingleJudge(BaseEvaluator):
         
         start_time = time.time()
         
-        # Get appropriate prompt based on iteration
+        # Get appropriate prompt
         if iteration == 1:
             prompt = self.prompt_manager.get_initial_evaluation_prompt(proof)
         else:
             prompt = self.prompt_manager.get_verification_prompt(feedback, proof)
         
-        # Try structured output first
-        result = self._try_structured_output(prompt)
-        
-        # Fallback to JSON parsing if needed
-        if result is None:
-            result = self._try_json_parsing(prompt)
+        # Try JSON parsing with format instructions
+        result = self._try_json_parsing(prompt)
         
         # Emergency fallback
         if result is None:
@@ -65,25 +68,23 @@ class SingleJudge(BaseEvaluator):
         
         return result
     
-    def _try_structured_output(self, prompt: str) -> Optional[EvaluationMetrics]:
-        """Attempt to use structured output API."""
-        try:
-            structured_llm = self.llm.with_structured_output(EvaluationMetrics)
-            result = structured_llm.invoke([HumanMessage(content=prompt)])
-            return result
-        except Exception as e:
-            print(f"[{self.judge_id}] Structured API failed: {e}")
-            return None
-    
     def _try_json_parsing(self, prompt: str) -> Optional[EvaluationMetrics]:
-        """Fallback: explicit JSON parsing."""
+        """Parse JSON response."""
         try:
             format_instructions = self.parser.get_format_instructions()
-            full_prompt = f"{prompt}\n\n{format_instructions}\n\nReturn ONLY valid JSON."
+            full_prompt = f"{prompt}\n\n{format_instructions}\n\nIMPORTANT: Return ONLY valid JSON."
             
-            response = self.llm.invoke([HumanMessage(content=full_prompt)])
-            result = self.parser.parse(response.content)
+            messages = [{"role": "user", "content": full_prompt}]
+            response = self.llm.invoke(messages)
+            
+            # Clean response
+            clean_response = response.strip()
+            if clean_response.startswith("```json"):
+                clean_response = clean_response.replace("```json", "").replace("```", "").strip()
+            
+            result = self.parser.parse(clean_response)
             return result
+            
         except Exception as e:
             print(f"[{self.judge_id}] JSON parsing failed: {e}")
             return None
@@ -97,5 +98,5 @@ class SingleJudge(BaseEvaluator):
             completeness_score=0,
             assumption_use_score=0,
             overall_verdict="FAIL",
-            detailed_feedback=f"SYSTEM ERROR: Parsing failed. Judge: {self.judge_id}"
+            detailed_feedback=f"SYSTEM ERROR: Evaluation failed after retries. Judge: {self.judge_id}"
         )

@@ -1,9 +1,8 @@
 # ============================================================================
-# File: src/agents/prover_agent.py
+# File: src/agents/prover_agent.py (UPDATED)
 # ============================================================================
-"""Proof generation agent."""
+"""Proof generation agent with provider abstraction."""
 
-from langchain_core.messages import HumanMessage
 from .base_agent import BaseAgent
 from ..utils.parsers import ResponseParser
 
@@ -19,20 +18,17 @@ class ProverAgent(BaseAgent):
         previous_proof: str = "",
         feedback: str = ""
     ) -> dict:
-        """
-        Generate or regenerate a convergence proof.
-        
-        Returns:
-            dict with 'current_proof', 'previous_proof', 'iteration'
-        """
+        """Generate or regenerate a convergence proof."""
         print(f"[ProverAgent] Generating proof (Iteration {iteration + 1})...")
         
         try:
             if iteration == 0:
                 # Initial proof generation
                 prompt = self.prompt_manager.get_generation_prompt(algorithm, assumptions)
-                response = self.llm.invoke([HumanMessage(content=prompt)])
-                proof = ResponseParser.clean_latex(response.content)
+                messages = [{"role": "user", "content": prompt}]
+                
+                response = self.llm.invoke(messages)
+                proof = ResponseParser.clean_latex(response)
                 
                 return {
                     "current_proof": proof,
@@ -42,8 +38,10 @@ class ProverAgent(BaseAgent):
             else:
                 # Correction iteration
                 prompt = self.prompt_manager.get_correction_prompt(previous_proof, feedback)
-                response = self.llm.invoke([HumanMessage(content=prompt)])
-                proof = ResponseParser.clean_latex(response.content)
+                messages = [{"role": "user", "content": prompt}]
+                
+                response = self.llm.invoke(messages)
+                proof = ResponseParser.clean_latex(response)
                 
                 return {
                     "previous_proof": previous_proof,
@@ -52,9 +50,10 @@ class ProverAgent(BaseAgent):
                 }
                 
         except Exception as e:
-            print(f"[ProverAgent] Error: {e}")
+            print(f"[ProverAgent] Error after all retries: {e}")
+            error_msg = f"\n% ERROR: {str(e)}\n% Agent could not generate proof after retries."
             return {
-                "current_proof": previous_proof + f"\n% ERROR: {str(e)}",
+                "current_proof": previous_proof + error_msg if previous_proof else error_msg,
                 "previous_proof": previous_proof,
                 "iteration": iteration + 1
             }

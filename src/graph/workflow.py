@@ -1,7 +1,7 @@
 # ============================================================================
-# File: src/graph/workflow.py (UPDATED with full tracking)
+# File: src/graph/workflow.py (UPDATED)
 # ============================================================================
-"""LangGraph workflow with complete state tracking."""
+"""LangGraph workflow with provider abstraction."""
 
 from langgraph.graph import StateGraph, END
 from ..models.types import AgentState
@@ -11,25 +11,33 @@ from .nodes import WorkflowNodes
 
 
 class ProofWorkflow:
-    """Convergence proof generation and evaluation workflow with full tracking."""
+    """Convergence proof generation and evaluation workflow."""
     
     def __init__(
         self,
+        provider_name: str = "nvidia",
         prover_model: str = "openai/gpt-oss-120b",
         evaluator_models: list = None,
+        api_key: str = None,
         use_multi_judge: bool = True,
         max_iterations: int = 3,
         temperature: float = 0.5,
+        timeout: int = 600,
+        max_retries: int = 3,
         output_dir: str = "output"
     ):
         if evaluator_models is None:
-            evaluator_models = ["openai/gpt-oss-120b"]
+            evaluator_models = [prover_model]
         
         self.nodes = WorkflowNodes(
+            provider_name=provider_name,
             prover_model=prover_model,
             evaluator_models=evaluator_models,
+            api_key=api_key,
             use_multi_judge=use_multi_judge,
-            temperature=temperature
+            temperature=temperature,
+            timeout=timeout,
+            max_retries=max_retries
         )
         
         self.max_iterations = max_iterations
@@ -40,11 +48,14 @@ class ProofWorkflow:
         
         # Store configuration
         self.config = {
+            "provider": provider_name,
             "prover_model": prover_model,
             "evaluator_models": evaluator_models,
             "use_multi_judge": use_multi_judge,
             "max_iterations": max_iterations,
-            "temperature": temperature
+            "temperature": temperature,
+            "timeout": timeout,
+            "max_retries": max_retries
         }
         
         self.app = self._build_graph()

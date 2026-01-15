@@ -1,7 +1,7 @@
 # ============================================================================
-# File: src/evaluators/multi_judge.py
+# File: src/evaluators/multi_judge.py (UPDATED)
 # ============================================================================
-"""Multi-judge ensemble evaluator."""
+"""Multi-judge ensemble evaluator with provider abstraction."""
 
 from typing import List, Optional
 import numpy as np
@@ -19,26 +19,38 @@ class MultiJudgeEvaluator:
     
     def __init__(
         self,
+        provider_name: str,
         judge_models: List[str],
+        api_key: str = None,
         temperature: float = 0.5,
         max_tokens: int = 8192,
+        timeout: int = 600,
+        max_retries: int = 3,
         outlier_threshold: float = 2.0
     ):
         """
         Initialize multi-judge evaluator.
         
         Args:
+            provider_name: LLM provider (nvidia, openrouter, etc.)
             judge_models: List of model names to use as judges
+            api_key: API key (optional, reads from env if not provided)
             temperature: Temperature for generation
             max_tokens: Max tokens per judge
+            timeout: Timeout in seconds
+            max_retries: Number of retry attempts
             outlier_threshold: Z-score threshold for outlier detection
         """
         self.judges = [
             SingleJudge(
+                provider_name=provider_name,
                 model_name=model,
                 judge_id=f"judge_{i}",
+                api_key=api_key,
                 temperature=temperature,
-                max_tokens=max_tokens
+                max_tokens=max_tokens,
+                timeout=timeout,
+                max_retries=max_retries
             )
             for i, model in enumerate(judge_models)
         ]
@@ -223,3 +235,4 @@ class MultiJudgeEvaluator:
                 consensus_errors.add(error_step)
         
         return {"consensus_errors": consensus_errors}
+

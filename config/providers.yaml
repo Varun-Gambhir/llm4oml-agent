@@ -1,0 +1,52 @@
+
+# ============================================================================
+# File: config/providers.yaml (NEW)
+# ============================================================================
+
+# LLM Provider Configurations
+
+# NVIDIA AI Endpoints
+nvidia:
+  default_model: "openai/gpt-oss-120b"
+  timeout: 600
+  max_retries: 3
+  retry_delay: 5
+  available_models:
+    - "openai/gpt-oss-120b"
+    - "meta/llama-3.1-70b-instruct"
+    - "meta/llama-3.1-405b-instruct"
+
+# OpenRouter
+openrouter:
+  default_model: "anthropic/claude-3.5-sonnet"
+  timeout: 600
+  max_retries: 3
+  retry_delay: 5
+  available_models:
+    - "anthropic/claude-3.5-sonnet"
+    - "openai/gpt-4"
+    - "google/gemini-pro-1.5"
+    - "meta-llama/llama-3.1-405b-instruct"
+    - "qwen/qwen-2.5-72b-instruct"
+
+# OpenAI Direct
+openai:
+  default_model: "gpt-4"
+  timeout: 600
+  max_retries: 3
+  retry_delay: 5
+  available_models:
+    - "gpt-4"
+    - "gpt-4-turbo"
+    - "gpt-3.5-turbo"
+
+# Anthropic Direct
+anthropic:
+  default_model: "claude-3-5-sonnet-20241022"
+  timeout: 600
+  max_retries: 3
+  retry_delay: 5
+  available_models:
+    - "claude-3-5-sonnet-20241022"
+    - "claude-3-opus-20240229"
+    - "claude-3-haiku-20240307"

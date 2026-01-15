@@ -9,6 +9,13 @@ src/evaluators/__init__.py
 src/evaluators/base_evaluator.py
 src/evaluators/multi_judge.py
 src/evaluators/single_judge.py
+src/llm/__init__.py
+src/llm/anthropic_provider.py
+src/llm/base_provider.py
+src/llm/nvidia_provider.py
+src/llm/openai_provider.py
+src/llm/openrouter_provider.py
+src/llm/provider_factory.py
 src/metrics/__init__.py
 src/metrics/correction_metrics.py
 src/metrics/error_tracker.py
