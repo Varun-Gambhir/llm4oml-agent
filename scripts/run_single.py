@@ -49,7 +49,7 @@ def main():
     if args.model is None:
         default_models = {
             "nvidia": "openai/gpt-oss-120b",
-            "openrouter": "anthropic/claude-3.5-sonnet",
+            "openrouter": "z-ai/glm-4.5-air:free",
             "openai": "gpt-4",
             "anthropic": "claude-3-5-sonnet-20241022"
         }

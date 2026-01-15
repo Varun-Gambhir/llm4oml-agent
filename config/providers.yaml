@@ -18,7 +18,7 @@ nvidia:
 
 # OpenRouter
 openrouter:
-  default_model: "anthropic/claude-3.5-sonnet"
+  default_model: "nvidia/nemotron-3-nano-30b-a3b:free"
   timeout: 600
   max_retries: 3
   retry_delay: 5
