@@ -169,7 +169,8 @@ You are an expert at extracting convergence rates from optimization algorithm co
         Example 4: "The analysis shows sublinear convergence at rate O(1/T)"
         Answer: O(1/T)
         
-        Now, extract the convergence rate from the convergence proof in the pdf
+   Now, extract the convergence rate from the convergence proof provided in latex format below
+   {proof}
 
 Task: Evaluate whether a convergence proof properly utilizes all stated assumptions and whether 
         the reasoning includes non-trivial claims made without justification.
@@ -290,7 +291,7 @@ Task: Evaluate the completeness and structure of a convergence proof for an opti
         3. Is the final convergence guarantee clearly stated and derived?
         4. Are intermediate bounds and inequalities properly justified?
 
-now verify the proof in the pdf and provide all these metrics
+now verify the proof provided in the latex format and provide all these metrics
 1 Hallucination Error (HA) (yes/no)
 2 Missing Step (MS) (yes/no)
 3 Operator Error (OP) (yes/no)

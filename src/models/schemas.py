@@ -38,7 +38,10 @@ class CorrectionMetricsOutput(BaseModel):
     error_resolution_rate: float = Field(ge=0, le=1, description="ERR")
     regression_penalty: float = Field(ge=0, description="RP") 
     targeted_fix_precision: float = Field(ge=0, le=1, description="TFP")
-    correction_reasoning_score: float = Field(ge=0, le=1, description="CRS")
+    correction_reasoning_score: float = Field(ge=0, le=1, description="CRS (clipped)")
+    crs_raw: float = Field(description="CRS before clipping")
+    is_mixed_transition: bool = Field(default=False, description="Both fixes and new errors")
+
     
     errors_fixed: int
     errors_introduced: int

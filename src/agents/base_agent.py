@@ -17,7 +17,7 @@ class BaseAgent(ABC):
         model_name: str = "openai/gpt-oss-120b",
         api_key: str = None,
         temperature: float = 0.5,
-        max_tokens: int = 8192,
+        max_tokens: int = 8192*3,
         timeout: int = 600,
         max_retries: int = 3
     ):
