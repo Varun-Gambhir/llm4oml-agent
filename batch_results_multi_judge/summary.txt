@@ -1,0 +1,100 @@
+================================================================================
+BATCH PROCESSING SUMMARY
+================================================================================
+
+Generated: 2026-01-20 17:17:12
+Input File: algorithms.csv
+Output Directory: batch_results_multi_judge
+
+--------------------------------------------------------------------------------
+CONFIGURATION
+--------------------------------------------------------------------------------
+Provider: nvidia
+Prover Model: openai/gpt-oss-120b
+Evaluator Models: qwen/qwen3-235b-a22b, qwen/qwq-32b, microsoft/phi-3-medium-128k-instruct
+Multi-Judge: True
+Max Iterations: 3
+Timeout: 60s
+Max Retries: 3
+
+--------------------------------------------------------------------------------
+PROCESSING STATISTICS
+--------------------------------------------------------------------------------
+Total Algorithms: 68
+Completed: 68
+Failed: 0
+Total Processing Time: 6390.54 seconds
+Average Time per Algorithm: 93.98 seconds
+
+--------------------------------------------------------------------------------
+VERDICT DISTRIBUTION
+--------------------------------------------------------------------------------
+PASS           :  50 ( 73.5%)
+PASS_MINOR     :  13 ( 19.1%)
+FAIL           :   5 (  7.4%)
+
+--------------------------------------------------------------------------------
+CONVERGENCE STATISTICS
+--------------------------------------------------------------------------------
+Converged (PASS/PASS_MINOR): 63 (92.6%)
+Average Iterations: 1.03
+
+--------------------------------------------------------------------------------
+CORRECTION METRICS (CRS)
+--------------------------------------------------------------------------------
+Mean CRS: 0.021
+Mean ERR: 0.029
+Mean RP: 0.000
+Mean TFP: 0.029
+
+CRS Distribution:
+  Strong (≥0.7):       2 (  2.9%)
+  Partial (0.4-0.7):   0 (  0.0%)
+  Weak (<0.4):        66 ( 97.1%)
+
+--------------------------------------------------------------------------------
+ERROR RESOLUTION
+--------------------------------------------------------------------------------
+Total Errors Fixed: 0
+Total Errors Introduced: 0
+Net Improvement: 0
+Average Net Improvement per Algorithm: 0.00
+
+--------------------------------------------------------------------------------
+MULTI-JUDGE STATISTICS
+--------------------------------------------------------------------------------
+Number of Judges: 3
+Mean Judge Reliability (JRS): 0.137
+Mean Weighted CFRS: 0.855
+
+--------------------------------------------------------------------------------
+TOP 5 ALGORITHMS BY CRS
+--------------------------------------------------------------------------------
+1. CRS=0.700, Score=2, Iter=2
+   The algorithm iteratively updates parameters by so...
+2. CRS=0.700, Score=5, Iter=2
+   The algorithm iteratively updates parameters by ta...
+3. CRS=0.000, Score=5, Iter=1
+   The algorithm iteratively updates the parameters b...
+4. CRS=0.000, Score=5, Iter=1
+   The algorithm iteratively updates the parameters b...
+5. CRS=0.000, Score=5, Iter=1
+   The algorithm iteratively updates the parameters b...
+
+--------------------------------------------------------------------------------
+BOTTOM 5 ALGORITHMS BY CRS
+--------------------------------------------------------------------------------
+1. CRS=0.000, Score=5, Iter=1
+   The algorithm iteratively updates the parameters b...
+2. CRS=0.000, Score=5, Iter=1
+   The algorithm iteratively updates the parameters b...
+3. CRS=0.000, Score=5, Iter=1
+   The algorithm iteratively updates the parameters b...
+4. CRS=0.000, Score=5, Iter=1
+   The algorithm iteratively updates the parameters b...
+5. CRS=0.000, Score=5, Iter=1
+   The algorithm iteratively updates the parameters b...
+
+================================================================================
+END OF SUMMARY
+================================================================================

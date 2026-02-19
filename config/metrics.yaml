@@ -1,0 +1,13 @@
+cfrs:
+  hallucination_weight: 5
+  assumption_weight: 3
+  operator_weight: 2
+  missing_step_weight: 1
+
+drift:
+  lambda: 0.1
+
+crs:
+  err_weight: 0.5
+  regression_weight: 0.3
+  precision_weight: 0.2
