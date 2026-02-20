@@ -156,16 +156,5 @@ This project is licensed under the [MIT License](LICENSE).
 
 ## 👤 Author
 **Varun Gambhir**
+**Somshekar M**
 
----
-
-### 🏷 Citation
-If you use this framework in your research, please cite:
-```bibtex
-@software{gambhir2024convergence,
-  author = {Gambhir, Varun},
-  title = {Convergence Proof Agent (v3): Multi-Agent Iterative Refinement for Mathematical Proofs},
-  year = {2024},
-  url = {https://github.com/your-username/llm4oml-agent}
-}
-```
