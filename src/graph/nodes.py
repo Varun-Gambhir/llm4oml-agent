@@ -1,48 +1,70 @@
 # ============================================================================
-# File: src/graph/nodes.py (UPDATED)
+# File: src/graph/nodes.py
 # ============================================================================
-"""Node implementations for LangGraph workflow with provider abstraction."""
+"""
+LangGraph node implementations.
 
-from typing import Dict, Any
-from ..models.types import AgentState
+Key fixes over v2:
+  1. CRS is now computed from iteration 1 onward (first iteration uses
+     compute_first_iteration_crs; subsequent use the delta-based formula).
+  2. Multi-judge path propagates fully resolved per-type error sets so that
+     ERR, RP, and TFP are computed correctly.
+  3. flagged_steps_current is always populated and passed through state so
+     TFP has non-trivial data to work with.
+"""
+
+import logging
+from typing import Dict, Any, Optional, Set
+
+from ..models.types import AgentState, ErrorSet
+from ..models.schemas import EvaluationMetrics, ConsensusEvaluation
 from ..agents.prover_agent import ProverAgent
 from ..evaluators.multi_judge import MultiJudgeEvaluator
 from ..evaluators.single_judge import SingleJudge
 from ..metrics.correction_metrics import CorrectionMetricsCalculator
+from ..metrics.error_tracker import ErrorTracker
 from ..utils.state import StateManager
+from ..config.temperatures import TemperatureConfig, DEFAULT_TEMPERATURES
+
+logger = logging.getLogger(__name__)
 
 
 class WorkflowNodes:
-    """Contains all node logic for the proof workflow."""
-    
+    """All node logic for the convergence proof workflow."""
+
     def __init__(
         self,
         provider_name: str,
         prover_model: str,
         evaluator_models: list,
-        api_key: str = None,
+        api_key: Optional[str] = None,
         use_multi_judge: bool = True,
-        temperature: float = 0.5,
+        temperature: float = 0.5,          # instance default (overridden per phase)
         timeout: int = 600,
-        max_retries: int = 3
+        max_retries: int = 3,
+        temp_config: TemperatureConfig = DEFAULT_TEMPERATURES,
     ):
+        self.temp_config = temp_config
+
         self.prover = ProverAgent(
             provider_name=provider_name,
             model_name=prover_model,
             api_key=api_key,
             temperature=temperature,
             timeout=timeout,
-            max_retries=max_retries
+            max_retries=max_retries,
+            temp_config=temp_config,
         )
-        
+
         if use_multi_judge:
             self.evaluator = MultiJudgeEvaluator(
                 provider_name=provider_name,
                 judge_models=evaluator_models,
                 api_key=api_key,
-                temperature=temperature,
+                temperature=temp_config.evaluation,
                 timeout=timeout,
-                max_retries=max_retries
+                max_retries=max_retries,
+                temp_config=temp_config,
             )
         else:
             self.evaluator = SingleJudge(
@@ -50,67 +72,70 @@ class WorkflowNodes:
                 model_name=evaluator_models[0],
                 judge_id="single_judge",
                 api_key=api_key,
-                temperature=temperature,
+                temperature=temp_config.evaluation,
                 timeout=timeout,
-                max_retries=max_retries
+                max_retries=max_retries,
+                temp_config=temp_config,
             )
-        
+
         self.use_multi_judge = use_multi_judge
         self.correction_calc = CorrectionMetricsCalculator()
-    
+
+    # ------------------------------------------------------------------
+    # Prover node
+    # ------------------------------------------------------------------
+
     def prover_node(self, state: AgentState) -> Dict[str, Any]:
-        """Generate or correct proof."""
+        """Generate or correct the convergence proof."""
         result = self.prover.execute(
             algorithm=state["algorithm_description"],
             assumptions=state["assumptions"],
             iteration=state["iteration"],
             previous_proof=state.get("current_proof", ""),
-            feedback=state.get("feedback", "")
+            feedback=state.get("feedback", ""),
         )
         return result
-    
+
+    # ------------------------------------------------------------------
+    # Evaluator node
+    # ------------------------------------------------------------------
+
     def evaluator_node(self, state: AgentState) -> Dict[str, Any]:
-        """Evaluate proof with single or multiple judges."""
-        print(f"[EvaluatorNode] Evaluating proof (Iteration {state['iteration']})...")
-        
-        current_proof = state["current_proof"]
+        """Evaluate the current proof (single or multi-judge)."""
+        logger.info("[EvaluatorNode] Evaluating (iteration %d)...", state["iteration"])
+
+        proof = state["current_proof"]
         iteration = state["iteration"]
         feedback = state.get("feedback", "")
-        
+
         if self.use_multi_judge:
-            return self._multi_judge_evaluation(current_proof, feedback, iteration, state)
+            return self._multi_judge_evaluation(proof, feedback, iteration, state)
         else:
-            return self._single_judge_evaluation(current_proof, feedback, iteration, state)
-    
+            return self._single_judge_evaluation(proof, feedback, iteration, state)
+
+    # ------------------------------------------------------------------
+    # Single-judge evaluation
+    # ------------------------------------------------------------------
+
     def _single_judge_evaluation(
         self,
         proof: str,
         feedback: str,
         iteration: int,
-        state: AgentState
+        state: AgentState,
     ) -> Dict[str, Any]:
-        """Evaluate with single judge."""
-        metrics = self.evaluator.evaluate(proof, feedback, iteration)
-        
-        # Extract error set
-        error_set = {
-            "hallucinations": metrics.hallucination_steps,
-            "missing_steps": metrics.missing_step_indices,
-            "operator_errors": metrics.operator_error_steps,
-            "assumption_violations": metrics.assumption_violation_steps
-        }
-        
-        # Compute CRS if not first iteration
-        correction_metrics = None
-        if iteration > 1 and "error_set_previous" in state:
-            total_steps = len(proof.split('\n'))  # Simplified
-            correction_metrics = self.correction_calc.compute_crs(
-                state["error_set_previous"],
-                error_set,
-                metrics.flagged_steps,
-                total_steps
-            )
-        
+        metrics: EvaluationMetrics = self.evaluator.evaluate(proof, feedback, iteration)
+        error_set = ErrorTracker.error_set_from_metrics(metrics)
+        flagged = set(metrics.flagged_steps)
+
+        correction_metrics = self._compute_crs(
+            iteration=iteration,
+            state=state,
+            curr_error_set=error_set,
+            flagged_steps=flagged,
+            metrics=metrics,
+        )
+
         return {
             "feedback": metrics.detailed_feedback,
             "metrics": {
@@ -118,71 +143,133 @@ class WorkflowNodes:
                 "MS": metrics.missing_step,
                 "OP": metrics.operator_error,
                 "completeness_score": metrics.completeness_score,
-                "assumption_use_score": metrics.assumption_use_score
+                "assumption_use_score": metrics.assumption_use_score,
             },
             "verdict": metrics.overall_verdict,
+            "error_set_previous": state.get("error_set_current", StateManager.empty_error_set()),
             "error_set_current": error_set,
+            "flagged_steps_current": flagged,
             "correction_metrics": correction_metrics.dict() if correction_metrics else None,
-            "iteration": iteration
+            "iteration": iteration,
         }
-    
+
+    # ------------------------------------------------------------------
+    # Multi-judge evaluation
+    # ------------------------------------------------------------------
+
     def _multi_judge_evaluation(
         self,
         proof: str,
         feedback: str,
         iteration: int,
-        state: AgentState
+        state: AgentState,
     ) -> Dict[str, Any]:
-        """Evaluate with multiple judges."""
-        consensus = self.evaluator.evaluate_parallel(proof, feedback, iteration)
-        
-        # Extract consensus error set
-        consensus_errors = consensus.consensus_error_set.get("consensus_errors", set())
-        error_set = {
-            "hallucinations": set(),  # Can be refined based on error type
-            "missing_steps": set(),
-            "operator_errors": set(),
-            "assumption_violations": consensus_errors  # Simplified
+        consensus: ConsensusEvaluation = self.evaluator.evaluate_parallel(
+            proof, feedback, iteration
+        )
+
+        # Build fully resolved error set from merged consensus data
+        error_set: ErrorSet = {
+            "hallucinations": set(consensus.merged_hallucination_steps),
+            "missing_steps": set(consensus.merged_missing_step_indices),
+            "operator_errors": set(consensus.merged_operator_error_steps),
+            "assumption_violations": set(consensus.merged_assumption_violation_steps),
         }
-        
-        # Compute CRS if not first iteration
-        correction_metrics = None
-        if iteration > 1 and "error_set_previous" in state:
-            # Use first judge's flagged steps as reference
-            flagged = consensus.evaluations[0].metrics.flagged_steps
-            total_steps = len(proof.split('\n'))
-            
-            correction_metrics = self.correction_calc.compute_crs(
-                state["error_set_previous"],
-                error_set,
-                flagged,
-                total_steps
-            )
-        
+        flagged: Set[int] = set(consensus.merged_flagged_steps)
+
+        # Build a synthetic EvaluationMetrics for first-iteration CRS
+        synthetic_metrics = EvaluationMetrics(
+            hallucination_error=any(e.metrics.hallucination_error for e in consensus.evaluations),
+            missing_step=any(e.metrics.missing_step for e in consensus.evaluations),
+            operator_error=any(e.metrics.operator_error for e in consensus.evaluations),
+            completeness_score=round(consensus.mean_completeness),
+            assumption_use_score=round(consensus.mean_assumption_score),
+            overall_verdict=consensus.consensus_verdict,
+            detailed_feedback="",
+            hallucination_steps=set(consensus.merged_hallucination_steps),
+            missing_step_indices=set(consensus.merged_missing_step_indices),
+            operator_error_steps=set(consensus.merged_operator_error_steps),
+            assumption_violation_steps=set(consensus.merged_assumption_violation_steps),
+            flagged_steps=flagged,
+        )
+
+        correction_metrics = self._compute_crs(
+            iteration=iteration,
+            state=state,
+            curr_error_set=error_set,
+            flagged_steps=flagged,
+            metrics=synthetic_metrics,
+        )
+
         # Aggregate feedback from all judges
-        all_feedback = "\n\n---JUDGE CONSENSUS---\n\n"
-        all_feedback += f"Consensus Verdict: {consensus.consensus_verdict}\n"
-        all_feedback += f"Mean Completeness: {consensus.mean_completeness:.2f}\n"
-        all_feedback += f"Outlier Judges: {consensus.outlier_judges}\n\n"
-        
-        for eval_result in consensus.evaluations:
-            all_feedback += f"\n--- {eval_result.judge_id} ({eval_result.model_name}) ---\n"
-            all_feedback += eval_result.metrics.detailed_feedback
-        
+        feedback_parts = [
+            f"=== CONSENSUS: {consensus.consensus_verdict} ===",
+            f"Mean Completeness: {consensus.mean_completeness:.2f}",
+            f"Mean Assumption Score: {consensus.mean_assumption_score:.2f}",
+            f"Outlier Judges: {consensus.outlier_judges or 'none'}",
+            "",
+        ]
+        for ev in consensus.evaluations:
+            jrs_val = consensus.judge_reliability_scores[
+                next(
+                    (i for i, e in enumerate(consensus.evaluations) if e.judge_id == ev.judge_id),
+                    0,
+                )
+            ]
+            feedback_parts.append(
+                f"--- {ev.judge_id} ({ev.model_name}, JRS={jrs_val:.3f}) ---"
+            )
+            feedback_parts.append(ev.metrics.detailed_feedback)
+            feedback_parts.append("")
+        full_feedback = "\n".join(feedback_parts)
+
         return {
-            "feedback": all_feedback,
+            "feedback": full_feedback,
             "metrics": {
-                "HA": any(e.metrics.hallucination_error for e in consensus.evaluations),
-                "MS": any(e.metrics.missing_step for e in consensus.evaluations),
-                "OP": any(e.metrics.operator_error for e in consensus.evaluations),
-                "completeness_score": round(consensus.mean_completeness),
-                "assumption_use_score": round(consensus.mean_assumption_score),
-                "weighted_cfrs": consensus.weighted_cfrs
+                "HA": synthetic_metrics.hallucination_error,
+                "MS": synthetic_metrics.missing_step,
+                "OP": synthetic_metrics.operator_error,
+                "completeness_score": synthetic_metrics.completeness_score,
+                "assumption_use_score": synthetic_metrics.assumption_use_score,
+                "weighted_cfrs": consensus.weighted_cfrs,
             },
             "verdict": consensus.consensus_verdict,
+            "error_set_previous": state.get("error_set_current", StateManager.empty_error_set()),
             "error_set_current": error_set,
+            "flagged_steps_current": flagged,
             "correction_metrics": correction_metrics.dict() if correction_metrics else None,
             "judge_evaluations": [e.dict() for e in consensus.evaluations],
             "judge_reliability": consensus.judge_reliability_scores,
-            "iteration": iteration
+            "iteration": iteration,
         }
+
+    # ------------------------------------------------------------------
+    # CRS computation (always computed, even on first iteration)
+    # ------------------------------------------------------------------
+
+    def _compute_crs(
+        self,
+        iteration: int,
+        state: AgentState,
+        curr_error_set: ErrorSet,
+        flagged_steps: Set[int],
+        metrics: EvaluationMetrics,
+    ):
+        """
+        Compute CRS for ANY iteration:
+          - iteration == 1 → use compute_first_iteration_crs (static quality proxy)
+          - iteration >= 2 → use delta-based CRS with previous error set
+        """
+        if iteration <= 1:
+            # First evaluation — no previous error set exists
+            return self.correction_calc.compute_first_iteration_crs(metrics)
+
+        prev_error_set = state.get("error_set_current", StateManager.empty_error_set())
+        total_steps = max(len(state.get("current_proof", "").split("\n")), 1)
+
+        return self.correction_calc.compute_crs(
+            prev_error_set=prev_error_set,
+            curr_error_set=curr_error_set,
+            flagged_steps=flagged_steps,
+            total_steps_current=total_steps,
+        )

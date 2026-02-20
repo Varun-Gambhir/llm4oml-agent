@@ -5,74 +5,79 @@
 
 import json
 import re
+import logging
 from typing import Any, Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 
 class ResponseParser:
     """Parse and clean LLM responses."""
-    
+
     @staticmethod
     def extract_json(text: str) -> Optional[Dict[str, Any]]:
-        """Extract JSON from text with code fences."""
-        # Try to find JSON in code fences
-        json_match = re.search(r'```json\s*(.*?)\s*```', text, re.DOTALL)
-        if json_match:
-            json_str = json_match.group(1)
+        """Extract JSON from text that may contain markdown fences."""
+        # Try ```json ... ``` first
+        match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
+        if match:
+            json_str = match.group(1)
         else:
-            # Try to find raw JSON
-            json_match = re.search(r'\{.*\}', text, re.DOTALL)
-            if json_match:
-                json_str = json_match.group(0)
+            # Try raw { ... }
+            match = re.search(r"\{.*\}", text, re.DOTALL)
+            if match:
+                json_str = match.group(0)
             else:
                 return None
-        
+
         try:
             return json.loads(json_str)
-        except json.JSONDecodeError:
-            return None
-    
+        except json.JSONDecodeError as e:
+            logger.debug("JSON decode error: %s", e)
+            # Attempt repair: remove trailing commas
+            repaired = re.sub(r",\s*([}\]])", r"\1", json_str)
+            try:
+                return json.loads(repaired)
+            except json.JSONDecodeError:
+                return None
+
     @staticmethod
     def clean_latex(text: str) -> str:
-        """Clean LaTeX output from LLM."""
-        # Remove markdown code fences
-        text = re.sub(r'```latex\s*', '', text)
-        text = re.sub(r'```\s*$', '', text)
-        
-        # Ensure proper document structure
-        if '\\documentclass' not in text:
-            text = '\\documentclass{article}\n\\begin{document}\n' + text + '\n\\end{document}'
-        
+        """Clean LaTeX output from LLM (remove markdown fences, ensure structure)."""
+        text = re.sub(r"```latex\s*", "", text)
+        text = re.sub(r"```\s*$", "", text, flags=re.MULTILINE)
+
+        if r"\documentclass" not in text:
+            text = (
+                r"\documentclass{article}"
+                "\n"
+                r"\begin{document}"
+                "\n"
+                + text
+                + "\n"
+                + r"\end{document}"
+            )
         return text.strip()
-    
+
     @staticmethod
     def extract_error_steps(text: str) -> Dict[str, list]:
         """
         Extract step-level error indices from feedback text.
-        
-        Expected format in feedback:
-        - Hallucination Steps: [1, 5, 12]
-        - Missing Steps: [3, 7]
-        - ...
+        Looks for patterns like: Hallucination Steps: [1, 5, 12]
         """
-        error_types = {
-            'hallucinations': r'Hallucination Steps?:\s*\[([\d,\s]*)\]',
-            'missing_steps': r'Missing Steps?:\s*\[([\d,\s]*)\]',
-            'operator_errors': r'Operator Error Steps?:\s*\[([\d,\s]*)\]',
-            'assumption_violations': r'Assumption Violation Steps?:\s*\[([\d,\s]*)\]',
-            'flagged_steps': r'Flagged Steps?:\s*\[([\d,\s]*)\]'
+        patterns = {
+            "hallucinations": r"Hallucination Steps?:\s*\[([\d,\s]*)\]",
+            "missing_steps": r"Missing Steps?:\s*\[([\d,\s]*)\]",
+            "operator_errors": r"Operator Error Steps?:\s*\[([\d,\s]*)\]",
+            "assumption_violations": r"Assumption Violation Steps?:\s*\[([\d,\s]*)\]",
+            "flagged_steps": r"Flagged Steps?:\s*\[([\d,\s]*)\]",
         }
-        
-        error_sets = {}
-        for error_type, pattern in error_types.items():
+        result = {}
+        for key, pattern in patterns.items():
             match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                steps_str = match.group(1)
-                if steps_str.strip():
-                    steps = [int(s.strip()) for s in steps_str.split(',') if s.strip()]
-                    error_sets[error_type] = steps
-                else:
-                    error_sets[error_type] = []
+            if match and match.group(1).strip():
+                result[key] = [
+                    int(s.strip()) for s in match.group(1).split(",") if s.strip()
+                ]
             else:
-                error_sets[error_type] = []
-        
-        return error_sets
+                result[key] = []
+        return result

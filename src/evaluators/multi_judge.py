@@ -4,22 +4,29 @@
 """
 Multi-judge ensemble evaluator with reliability-aware consensus.
 
-This implementation is fully aligned with:
-- schemas.py (ConsensusEvaluation)
-- nodes.py / workflow.py expectations
-- judge_metrics.py (JRS, ESA, z-score)
-- correction_metrics.py (CRS handled elsewhere)
+Key fix over v2:
+  - Merged error sets (union across judges) are now propagated back to the
+    caller via ConsensusEvaluation fields so that CRS can be computed
+    correctly. In v2 the multi-judge path collapsed all errors into
+    assumption_violations only, making ERR/TFP unreliable.
+  - Judge temperature is always near-zero (set in SingleJudge).
 """
 
-from typing import List, Optional
-import numpy as np
+import time
+import logging
+from typing import List, Optional, Set
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+import numpy as np
 
 from .single_judge import SingleJudge
 from ..models.schemas import EvaluationMetrics, JudgeEvaluation, ConsensusEvaluation
 from ..models.types import ErrorSet
 from ..metrics.judge_metrics import JudgeReliabilityCalculator
 from ..metrics.error_tracker import ErrorTracker
+from ..config.temperatures import TemperatureConfig, DEFAULT_TEMPERATURES
+
+logger = logging.getLogger(__name__)
 
 
 class MultiJudgeEvaluator:
@@ -29,12 +36,13 @@ class MultiJudgeEvaluator:
         self,
         provider_name: str,
         judge_models: List[str],
-        api_key: str = None,
-        temperature: float = 0.5,
+        api_key: Optional[str] = None,
+        temperature: float = 0.05,   # always near-zero for evaluation
         max_tokens: int = 8192,
         timeout: int = 600,
         max_retries: int = 3,
         outlier_threshold: float = 2.0,
+        temp_config: TemperatureConfig = DEFAULT_TEMPERATURES,
     ):
         self.judges = [
             SingleJudge(
@@ -46,43 +54,39 @@ class MultiJudgeEvaluator:
                 max_tokens=max_tokens,
                 timeout=timeout,
                 max_retries=max_retries,
+                temp_config=temp_config,
             )
             for i, model in enumerate(judge_models)
         ]
-
         self.reliability_calc = JudgeReliabilityCalculator()
         self.outlier_threshold = outlier_threshold
 
     # ------------------------------------------------------------------
     # Public entry point
     # ------------------------------------------------------------------
+
     def evaluate_parallel(
         self,
         proof: str,
         feedback: Optional[str] = None,
         iteration: int = 1,
     ) -> ConsensusEvaluation:
-
         evaluations: List[JudgeEvaluation] = []
 
         with ThreadPoolExecutor(max_workers=len(self.judges)) as executor:
             futures = {
                 executor.submit(
-                    self._evaluate_single_judge,
-                    judge,
-                    proof,
-                    feedback,
-                    iteration,
+                    self._evaluate_single_judge, judge, proof, feedback, iteration
                 ): judge
                 for judge in self.judges
             }
-
             for future in as_completed(futures):
                 try:
                     evaluations.append(future.result())
-                except Exception as e:
-                    judge = futures[future]
-                    print(f"[MultiJudgeEvaluator] {judge.judge_id} failed: {e}")
+                except Exception as exc:
+                    logger.error(
+                        "[MultiJudge] %s failed: %s", futures[future].judge_id, exc
+                    )
 
         if not evaluations:
             raise RuntimeError("All judges failed. Cannot form consensus.")
@@ -92,6 +96,7 @@ class MultiJudgeEvaluator:
     # ------------------------------------------------------------------
     # Judge execution
     # ------------------------------------------------------------------
+
     def _evaluate_single_judge(
         self,
         judge: SingleJudge,
@@ -99,115 +104,89 @@ class MultiJudgeEvaluator:
         feedback: Optional[str],
         iteration: int,
     ) -> JudgeEvaluation:
-        import time
-
         start = time.time()
         metrics = judge.evaluate(proof, feedback, iteration)
-        elapsed = time.time() - start
-
         return JudgeEvaluation(
             judge_id=judge.judge_id,
             model_name=judge.model_name,
             metrics=metrics,
-            response_time=elapsed,
+            response_time=time.time() - start,
         )
 
     # ------------------------------------------------------------------
     # Consensus logic
     # ------------------------------------------------------------------
+
     def _compute_consensus(
         self, evaluations: List[JudgeEvaluation]
     ) -> ConsensusEvaluation:
 
-        tracker = ErrorTracker()
-
-        error_sets = [self._extract_error_set(e.metrics) for e in evaluations]
+        error_sets: List[ErrorSet] = [
+            ErrorTracker.error_set_from_metrics(e.metrics) for e in evaluations
+        ]
         completeness = [e.metrics.completeness_score for e in evaluations]
         assumption_use = [e.metrics.assumption_use_score for e in evaluations]
 
-        # ------------------------------------------------------------------
-        # Judge reliability (JRS)
-        # ------------------------------------------------------------------
-        combined_scores = [
-            0.5 * c + 0.5 * a for c, a in zip(completeness, assumption_use)
-        ]
-
+        # JRS
+        combined_scores = [0.5 * c + 0.5 * a for c, a in zip(completeness, assumption_use)]
         judge_metrics = self.reliability_calc.compute_jrs(
-            error_sets=error_sets,
-            scores=combined_scores,
+            error_sets=error_sets, scores=combined_scores
         )
-
         jrs = np.array([jm["jrs"] for jm in judge_metrics])
         z_scores = [jm["z_score"] for jm in judge_metrics]
 
-        # ------------------------------------------------------------------
         # Outlier detection
-        # ------------------------------------------------------------------
-        outliers = set(
-            self.reliability_calc.detect_outliers(
-                z_scores, threshold=self.outlier_threshold
-            )
+        outliers: Set[int] = set(
+            self.reliability_calc.detect_outliers(z_scores, self.outlier_threshold)
+        )
+        valid_indices = [i for i in range(len(evaluations)) if i not in outliers] or list(
+            range(len(evaluations))
         )
 
-        valid_indices = [i for i in range(len(evaluations)) if i not in outliers]
-        if not valid_indices:
-            valid_indices = list(range(len(evaluations)))
+        # Stable weights from JRS (floored at 1e-6)
+        weights = np.array([max(float(jrs[i]), 1e-6) for i in valid_indices])
+        weights /= weights.sum()
 
-        # ------------------------------------------------------------------
-        # Stable weights
-        # ------------------------------------------------------------------
-        weights = np.array([max(jrs[i], 1e-6) for i in valid_indices])
-        weights = weights / weights.sum()
-
-        # ------------------------------------------------------------------
         # Ordinal-aware verdict (weighted median)
-        # ------------------------------------------------------------------
-        verdict_to_score = {
-            "PASS": 5,
-            "PASS_MINOR": 4,
-            "CONDITIONAL": 3,
-            "FAIL": 2,
-            "REJECT": 1,
-        }
-
+        verdict_to_score = {"PASS": 5, "PASS_MINOR": 4, "CONDITIONAL": 3, "FAIL": 2, "REJECT": 1}
         scored = sorted(
-            (
-                verdict_to_score[evaluations[i].metrics.overall_verdict],
-                weights[j],
-            )
+            (verdict_to_score.get(evaluations[i].metrics.overall_verdict, 2), weights[j])
             for j, i in enumerate(valid_indices)
         )
-
         cumulative = 0.0
-        consensus_score = 1
+        consensus_score = 2
         for score, w in scored:
             cumulative += w
             if cumulative >= 0.5:
                 consensus_score = score
                 break
-
         consensus_verdict = self._score_to_verdict(consensus_score)
 
-        # ------------------------------------------------------------------
-        # Reporting statistics (static quality proxy)
-        # ------------------------------------------------------------------
-        mean_completeness = sum(
-            weights[j] * completeness[i] for j, i in enumerate(valid_indices)
+        # Weighted quality means (valid judges only)
+        mean_completeness = float(
+            sum(weights[j] * completeness[i] for j, i in enumerate(valid_indices))
         )
-        mean_assumption = sum(
-            weights[j] * assumption_use[i] for j, i in enumerate(valid_indices)
+        mean_assumption = float(
+            sum(weights[j] * assumption_use[i] for j, i in enumerate(valid_indices))
         )
-
-        # IMPORTANT:
-        # This is NOT CRS. It is a static quality proxy only.
         weighted_cfrs = (mean_completeness + mean_assumption) / 10.0
 
-        # ------------------------------------------------------------------
-        # Consensus error set (majority vote)
-        # ------------------------------------------------------------------
-        consensus_error_set = self._compute_consensus_error_set(
-            [error_sets[i] for i in valid_indices]
-        )
+        # ----------------------------------------------------------------
+        # Merged error sets — CRITICAL FIX vs v2
+        # Use majority-vote merging across all valid judges
+        # ----------------------------------------------------------------
+        valid_error_sets = [error_sets[i] for i in valid_indices]
+        merged = ErrorTracker.merge_error_sets(valid_error_sets, mode="majority")
+
+        # Also union-merge flagged steps (more inclusive is safer for correction)
+        merged_flagged: Set[int] = set()
+        for ev in [evaluations[i] for i in valid_indices]:
+            merged_flagged |= set(ev.metrics.flagged_steps)
+
+        # Consensus error set (for backward compat)
+        consensus_error_set = {
+            "consensus_errors": ErrorTracker.get_all_errors(merged)
+        }
 
         return ConsensusEvaluation(
             num_judges=len(evaluations),
@@ -219,46 +198,20 @@ class MultiJudgeEvaluator:
             outlier_judges=[evaluations[i].judge_id for i in outliers],
             consensus_error_set=consensus_error_set,
             weighted_cfrs=weighted_cfrs,
+            # Fully resolved per-type merged sets for CRS downstream
+            merged_hallucination_steps=set(merged.get("hallucinations", set())),
+            merged_missing_step_indices=set(merged.get("missing_steps", set())),
+            merged_operator_error_steps=set(merged.get("operator_errors", set())),
+            merged_assumption_violation_steps=set(merged.get("assumption_violations", set())),
+            merged_flagged_steps=merged_flagged,
         )
 
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
-    def _extract_error_set(self, metrics: EvaluationMetrics) -> ErrorSet:
-        return {
-            "hallucinations": metrics.hallucination_steps,
-            "missing_steps": metrics.missing_step_indices,
-            "operator_errors": metrics.operator_error_steps,
-            "assumption_violations": metrics.assumption_violation_steps,
-        }
 
-    def _score_to_verdict(self, score: int) -> str:
-        if score >= 5:
-            return "PASS"
-        if score == 4:
-            return "PASS_MINOR"
-        if score == 3:
-            return "CONDITIONAL"
-        if score == 2:
-            return "FAIL"
-        return "REJECT"
-
-    def _compute_consensus_error_set(self, error_sets: List[ErrorSet]) -> dict:
-        tracker = ErrorTracker()
-
-        all_errors = set()
-        for es in error_sets:
-            all_errors |= tracker.get_all_errors(es)
-
-        threshold = len(error_sets) / 2
-        consensus = set()
-
-        for step in all_errors:
-            count = sum(
-                step in tracker.get_all_errors(es) for es in error_sets
-            )
-            if count > threshold:
-                consensus.add(step)
-
-        return {"consensus_errors": consensus}
-
+    @staticmethod
+    def _score_to_verdict(score: int) -> str:
+        return {5: "PASS", 4: "PASS_MINOR", 3: "CONDITIONAL", 2: "FAIL", 1: "REJECT"}.get(
+            score, "FAIL"
+        )

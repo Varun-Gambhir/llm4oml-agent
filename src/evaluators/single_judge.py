@@ -1,35 +1,49 @@
 # ============================================================================
-# File: src/evaluators/single_judge.py (UPDATED)
+# File: src/evaluators/single_judge.py
 # ============================================================================
-"""Single LLM judge evaluator with provider abstraction."""
+"""
+Single LLM judge evaluator.
 
+Temperature strategy:
+  - ALWAYS near-zero (0.05) for evaluation/verification regardless of
+    global config. Deterministic, structured JSON output is critical here.
+    High temperature produces inconsistent verdicts and malformed JSON.
+"""
+
+import json
+import re
 import time
+import logging
 from typing import Optional
-from langchain_core.output_parsers import PydanticOutputParser
 
 from .base_evaluator import BaseEvaluator
 from ..models.schemas import EvaluationMetrics
 from ..utils.prompts import PromptManager
 from ..llm.provider_factory import LLMProviderFactory
+from ..config.temperatures import get_judge_temperature, TemperatureConfig, DEFAULT_TEMPERATURES
+
+logger = logging.getLogger(__name__)
 
 
 class SingleJudge(BaseEvaluator):
-    """Single LLM evaluator with retry logic."""
-    
+    """Single LLM evaluator with deterministic temperature and robust JSON parsing."""
+
     def __init__(
         self,
         provider_name: str,
         model_name: str,
         judge_id: str,
-        api_key: str = None,
-        temperature: float = 0.5,
+        api_key: Optional[str] = None,
+        temperature: float = 0.05,   # default override — evaluation must be near-0
         max_tokens: int = 8192,
         timeout: int = 600,
-        max_retries: int = 3
+        max_retries: int = 3,
+        temp_config: TemperatureConfig = DEFAULT_TEMPERATURES,
     ):
         super().__init__(model_name, judge_id)
-        
         self.provider_name = provider_name
+        self.temp_config = temp_config
+
         self.llm = LLMProviderFactory.create(
             provider_name=provider_name,
             model_name=model_name,
@@ -37,60 +51,138 @@ class SingleJudge(BaseEvaluator):
             temperature=temperature,
             max_tokens=max_tokens,
             timeout=timeout,
-            max_retries=max_retries
+            max_retries=max_retries,
         )
-        
         self.prompt_manager = PromptManager()
-        self.parser = PydanticOutputParser(pydantic_object=EvaluationMetrics)
-    
+
     def evaluate(
         self,
         proof: str,
         feedback: Optional[str] = None,
-        iteration: int = 1
+        iteration: int = 1,
     ) -> EvaluationMetrics:
-        """Evaluate proof using single LLM judge."""
-        
-        start_time = time.time()
-        
-        # Get appropriate prompt
+        """Evaluate a proof with deterministic temperature."""
+        temperature = get_judge_temperature(iteration, self.temp_config)
+        phase = "evaluation" if iteration <= 1 else "verification"
+
+        logger.info(
+            "[%s] %s (iter %d), temperature=%.2f",
+            self.judge_id, phase, iteration, temperature,
+        )
+        print(
+            f"[{self.judge_id}] {phase} (iter {iteration}), "
+            f"model={self.model_name}, temperature={temperature:.2f}"
+        )
+
         if iteration == 1:
             prompt = self.prompt_manager.get_initial_evaluation_prompt(proof)
         else:
-            prompt = self.prompt_manager.get_verification_prompt(feedback, proof)
-        
-        # Try JSON parsing with format instructions
-        result = self._try_json_parsing(prompt)
-        
-        # Emergency fallback
+            prompt = self.prompt_manager.get_verification_prompt(feedback or "", proof)
+
+        result = self._parse_with_retries(prompt, temperature)
         if result is None:
-            result = self._create_error_result(proof)
-        
+            result = self._fallback_result()
         return result
-    
-    def _try_json_parsing(self, prompt: str) -> Optional[EvaluationMetrics]:
-        """Parse JSON response."""
+
+    # ------------------------------------------------------------------
+    # Parsing helpers
+    # ------------------------------------------------------------------
+
+    def _parse_with_retries(
+        self, prompt: str, temperature: float, max_attempts: int = 3
+    ) -> Optional[EvaluationMetrics]:
+        """
+        Try to get a valid JSON EvaluationMetrics response.
+        Attempts in order:
+          1. Plain prompt → parse
+          2. Add explicit JSON instruction → parse
+          3. Add format schema → parse
+        """
+        format_instructions = (
+            "\n\nIMPORTANT: You MUST respond with ONLY valid JSON. No text before or after. "
+            "The JSON must have these exact keys: hallucination_error (bool), missing_step (bool), "
+            "operator_error (bool), completeness_score (int 0-5), assumption_use_score (int 0-5), "
+            "overall_verdict (str: PASS|PASS_MINOR|CONDITIONAL|FAIL|REJECT), "
+            "detailed_feedback (str), hallucination_steps (list of ints), "
+            "missing_step_indices (list of ints), operator_error_steps (list of ints), "
+            "assumption_violation_steps (list of ints), flagged_steps (list of ints)."
+        )
+
+        attempts = [prompt, prompt + format_instructions, prompt + format_instructions]
+
+        for attempt_idx, full_prompt in enumerate(attempts):
+            try:
+                messages = [{"role": "user", "content": full_prompt}]
+                response = self.llm.invoke(messages, temperature=temperature)
+                result = self._parse_response(response)
+                if result is not None:
+                    return result
+                logger.warning(
+                    "[%s] JSON parse attempt %d failed", self.judge_id, attempt_idx + 1
+                )
+            except Exception as exc:
+                logger.warning(
+                    "[%s] API call attempt %d failed: %s", self.judge_id, attempt_idx + 1, exc
+                )
+
+        return None
+
+    def _parse_response(self, text: str) -> Optional[EvaluationMetrics]:
+        """Extract and validate JSON from LLM response text."""
+        # 1. Try ```json ... ```
+        match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
+        if match:
+            json_str = match.group(1)
+        else:
+            # 2. Find outermost { ... }
+            match = re.search(r"\{.*\}", text, re.DOTALL)
+            if not match:
+                return None
+            json_str = match.group(0)
+
+        # Repair trailing commas
+        json_str = re.sub(r",\s*([}\]])", r"\1", json_str)
+
         try:
-            format_instructions = self.parser.get_format_instructions()
-            full_prompt = f"{prompt}\n\n{format_instructions}\n\nIMPORTANT: Return ONLY valid JSON."
-            
-            messages = [{"role": "user", "content": full_prompt}]
-            response = self.llm.invoke(messages)
-            
-            # Clean response
-            clean_response = response.strip()
-            if clean_response.startswith("```json"):
-                clean_response = clean_response.replace("```json", "").replace("```", "").strip()
-            
-            result = self.parser.parse(clean_response)
-            return result
-            
-        except Exception as e:
-            print(f"[{self.judge_id}] JSON parsing failed: {e}")
+            data = json.loads(json_str)
+        except json.JSONDecodeError as e:
+            logger.debug("[%s] JSONDecodeError: %s", self.judge_id, e)
             return None
-    
-    def _create_error_result(self, proof: str) -> EvaluationMetrics:
-        """Emergency fallback result."""
+
+        # Coerce types that LLMs commonly get wrong
+        for list_field in [
+            "hallucination_steps",
+            "missing_step_indices",
+            "operator_error_steps",
+            "assumption_violation_steps",
+            "flagged_steps",
+        ]:
+            if list_field not in data or data[list_field] is None:
+                data[list_field] = []
+            elif isinstance(data[list_field], (int, float)):
+                data[list_field] = [int(data[list_field])]
+
+        # Coerce booleans
+        for bool_field in ["hallucination_error", "missing_step", "operator_error"]:
+            if isinstance(data.get(bool_field), str):
+                data[bool_field] = data[bool_field].lower() in ("true", "yes", "1")
+
+        # Coerce int scores
+        for int_field in ["completeness_score", "assumption_use_score"]:
+            if isinstance(data.get(int_field), str):
+                try:
+                    data[int_field] = int(data[int_field])
+                except ValueError:
+                    data[int_field] = 0
+
+        try:
+            return EvaluationMetrics(**data)
+        except Exception as exc:
+            logger.debug("[%s] Pydantic validation error: %s", self.judge_id, exc)
+            return None
+
+    def _fallback_result(self) -> EvaluationMetrics:
+        """Emergency fallback when all parse attempts fail."""
         return EvaluationMetrics(
             hallucination_error=False,
             missing_step=False,
@@ -98,5 +190,8 @@ class SingleJudge(BaseEvaluator):
             completeness_score=0,
             assumption_use_score=0,
             overall_verdict="FAIL",
-            detailed_feedback=f"SYSTEM ERROR: Evaluation failed after retries. Judge: {self.judge_id}"
+            detailed_feedback=(
+                f"SYSTEM ERROR: Evaluation parsing failed after all retries. "
+                f"Judge: {self.judge_id}, Model: {self.model_name}"
+            ),
         )

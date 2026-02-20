@@ -7,12 +7,20 @@ from typing import Dict, Any
 from ..models.types import AgentState, ErrorSet
 
 
+_EMPTY_ERROR_SET: ErrorSet = {
+    "hallucinations": set(),
+    "missing_steps": set(),
+    "operator_errors": set(),
+    "assumption_violations": set(),
+}
+
+
 class StateManager:
     """Manages agent state transitions and updates."""
-    
+
     @staticmethod
     def initialize_state(algorithm: str, assumptions: str) -> AgentState:
-        """Create initial agent state."""
+        """Create the initial agent state."""
         return {
             "algorithm_description": algorithm,
             "assumptions": assumptions,
@@ -22,39 +30,26 @@ class StateManager:
             "iteration": 0,
             "metrics": {},
             "verdict": "FAIL",
-            "error_set_current": {
-                "hallucinations": set(),
-                "missing_steps": set(),
-                "operator_errors": set(),
-                "assumption_violations": set()
-            },
-            "error_set_previous": {
-                "hallucinations": set(),
-                "missing_steps": set(),
-                "operator_errors": set(),
-                "assumption_violations": set()
-            }
+            "error_set_current": dict(_EMPTY_ERROR_SET),
+            "error_set_previous": dict(_EMPTY_ERROR_SET),
+            "flagged_steps_current": set(),
         }
-    
+
     @staticmethod
     def should_continue(state: AgentState, max_iterations: int = 3) -> str:
-        """Determine next step in workflow."""
-        verdict = state["verdict"]
-        iteration = state["iteration"]
-        
-        if iteration > max_iterations:
+        """Routing function for LangGraph conditional edges."""
+        verdict = state.get("verdict", "FAIL")
+        iteration = state.get("iteration", 0)
+
+        if iteration >= max_iterations:
             return "end"
-        if verdict in ["PASS", "PASS_MINOR"]:
+        if verdict in ("PASS", "PASS_MINOR"):
             return "end"
-        if verdict == "FAIL" and "SYSTEM ERROR" in state["feedback"]:
+        if "SYSTEM ERROR" in state.get("feedback", ""):
             return "end"
-        
+
         return "correct"
-    
+
     @staticmethod
-    def update_error_sets(state: AgentState, new_error_set: ErrorSet) -> Dict[str, Any]:
-        """Update error sets in state."""
-        return {
-            "error_set_previous": state.get("error_set_current", new_error_set),
-            "error_set_current": new_error_set
-        }
+    def empty_error_set() -> ErrorSet:
+        return {k: set() for k in _EMPTY_ERROR_SET}

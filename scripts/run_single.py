@@ -1,65 +1,70 @@
 # ============================================================================
-# File: scripts/run_single.py (UPDATED)
+# File: scripts/run_single.py
 # ============================================================================
-"""Script to run single proof generation with provider support."""
+"""Run a single convergence proof generation and evaluation."""
 
 import argparse
-import json
-import os
+import sys
 from pathlib import Path
 from dotenv import load_dotenv
-import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.graph.workflow import ProofWorkflow
+from src.config.temperatures import TemperatureConfig
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate and evaluate convergence proof")
+    parser = argparse.ArgumentParser(description="Generate and evaluate a convergence proof")
     parser.add_argument("--algorithm", required=True, help="Algorithm description")
-    parser.add_argument("--assumptions", required=True, help="Assumptions")
-    
-    # Provider configuration
-    parser.add_argument("--provider", default="nvidia", 
-                       choices=["nvidia", "openrouter", "openai", "anthropic"],
-                       help="LLM provider to use")
-    parser.add_argument("--api-key", help="API key (overrides environment variable)")
-    
-    # Model configuration
-    parser.add_argument("--model", help="Model to use (provider-specific)")
-    parser.add_argument("--judges", nargs="+", help="List of judge models")
-    parser.add_argument("--multi-judge", action="store_true", help="Use multi-judge evaluation")
-    
+    parser.add_argument("--assumptions", required=True, help="Algorithm assumptions")
+
+    # Provider
+    parser.add_argument(
+        "--provider", default="nvidia",
+        choices=["nvidia", "openrouter", "openai", "anthropic"],
+    )
+    parser.add_argument("--api-key", default=None, help="API key (overrides env var)")
+
+    # Models
+    parser.add_argument("--model", default=None, help="Prover model")
+    parser.add_argument("--judges", nargs="+", default=None, help="Judge model(s)")
+    parser.add_argument("--multi-judge", action="store_true")
+
     # Generation parameters
-    parser.add_argument("--max-iter", type=int, default=3, help="Max iterations")
-    parser.add_argument("--temperature", type=float, default=0.5, help="Temperature")
-    parser.add_argument("--timeout", type=int, default=600, help="Timeout in seconds")
-    parser.add_argument("--max-retries", type=int, default=3, help="Max retry attempts")
-    
-    # Output
-    parser.add_argument("--output", default="output", help="Output directory")
-    
+    parser.add_argument("--max-iter", type=int, default=3)
+    parser.add_argument("--timeout", type=int, default=600)
+    parser.add_argument("--max-retries", type=int, default=3)
+    parser.add_argument("--output", default="output")
+
+    # Per-phase temperature overrides (optional)
+    parser.add_argument("--temp-generation", type=float, default=0.7)
+    parser.add_argument("--temp-correction", type=float, default=0.4)
+    parser.add_argument("--temp-evaluation", type=float, default=0.05)
+    parser.add_argument("--temp-verification", type=float, default=0.05)
+
     args = parser.parse_args()
-    
-    # Load environment
     load_dotenv()
-    
-    # Get default model for provider if not specified
+
     if args.model is None:
-        default_models = {
+        defaults = {
             "nvidia": "openai/gpt-oss-120b",
-            "openrouter": "z-ai/glm-4.5-air:free",
+            "openrouter": "anthropic/claude-3.5-sonnet",
             "openai": "gpt-4",
-            "anthropic": "claude-3-5-sonnet-20241022"
+            "anthropic": "claude-3-5-sonnet-20241022",
         }
-        args.model = default_models.get(args.provider)
+        args.model = defaults[args.provider]
         print(f"Using default model for {args.provider}: {args.model}")
-    
-    # Setup evaluator models
-    evaluator_models = args.judges if args.judges else [args.model]
-    
-    # Create workflow
+
+    evaluator_models = args.judges or [args.model]
+
+    temp_config = TemperatureConfig(
+        generation=args.temp_generation,
+        correction=args.temp_correction,
+        evaluation=args.temp_evaluation,
+        verification=args.temp_verification,
+    )
+
     workflow = ProofWorkflow(
         provider_name=args.provider,
         prover_model=args.model,
@@ -67,41 +72,34 @@ def main():
         api_key=args.api_key,
         use_multi_judge=args.multi_judge,
         max_iterations=args.max_iter,
-        temperature=args.temperature,
         timeout=args.timeout,
         max_retries=args.max_retries,
-        output_dir=args.output
+        output_dir=args.output,
+        temp_config=temp_config,
     )
-    
-    # Run with tracking
-    print(f"\nProvider: {args.provider}")
-    print(f"Model: {args.model}")
-    print(f"Timeout: {args.timeout}s")
-    print(f"Max Retries: {args.max_retries}\n")
-    
+
+    print(f"\nProvider       : {args.provider}")
+    print(f"Prover model   : {args.model}")
+    print(f"Judge model(s) : {evaluator_models}")
+    print(f"Temperatures   : gen={temp_config.generation}, corr={temp_config.correction}, "
+          f"eval={temp_config.evaluation}")
+    print(f"Max iterations : {args.max_iter}")
+
     final_state, tracker = workflow.run(args.algorithm, args.assumptions)
-    
-    # Print summary
-    print("\n" + "="*60)
-    print("EXECUTION SUMMARY")
-    print("="*60)
-    
+
     log = tracker.get_log()
-    
-    print(f"\nProvider: {args.provider}")
-    print(f"Algorithm: {log['algorithm_description'][:60]}...")
-    print(f"Total Iterations: {log['final_results']['total_iterations']}")
-    print(f"Final Verdict: {log['final_results']['verdict']}")
-    print(f"Convergence: {'Yes' if log['final_results']['convergence_achieved'] else 'No'}")
-    
-    if "statistics" in log:
-        stats = log["statistics"]
-        print(f"\nTotal Errors Identified: {stats['total_errors_identified']}")
-        
-        if stats["crs_progression"]:
-            print(f"CRS Progression: {' → '.join([f'{x:.2f}' for x in stats['crs_progression']])}")
-    
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
+    print("EXECUTION SUMMARY")
+    print("=" * 60)
+    print(f"Final Verdict    : {log['final_results']['verdict']}")
+    print(f"Total Iterations : {log['final_results']['total_iterations']}")
+    print(f"Convergence      : {log['final_results']['convergence_achieved']}")
+
+    stats = log.get("statistics", {})
+    crs_prog = stats.get("crs_progression", [])
+    if crs_prog:
+        print(f"CRS Progression  : {' → '.join(f'{x:.3f}' for x in crs_prog)}")
+    print("=" * 60)
 
 
 if __name__ == "__main__":

@@ -1,131 +1,218 @@
 # ============================================================================
 # File: src/metrics/correction_metrics.py
 # ============================================================================
-"""Correction Reasoning Score (CRS) computation."""
+"""
+Correction Reasoning Score (CRS) computation — v3 fixed implementation.
 
-from typing import Set
+ROOT CAUSE of the always-0.7 bug in v2:
+  With weights (0.5, 0.3, 0.2) and formula  CRS = w_err*ERR - w_rp*RP + w_tfp*TFP
+  When a proof goes from N errors → 0 errors:
+    ERR = 1.0   (all previous errors fixed)
+    RP  = 0.0   (no new errors introduced)
+    TFP = 1.0   (all flagged steps addressed)
+  ⟹ CRS = 0.5*1.0 - 0.3*0.0 + 0.2*1.0 = 0.70 — always 0.70!
+
+  The ceiling is structural: max(CRS) = w_err + w_tfp = 0.5 + 0.2 = 0.70.
+
+FIXES in v3:
+  1. Weights now sum to 1.0 correctly: ERR=0.5, RP_penalty=0.3 kept as penalty
+     but TFP raised to 0.5, then normalised so max reachable = 1.0.
+  2. New formula (calibrated):
+       CRS = (w_err * ERR + w_tfp * TFP) * (1 - w_rp_pen * RP_clamped)
+     This multiplicative penalty means:
+       - Perfect correction (ERR=1, TFP=1, RP=0) → CRS = 1.0
+       - Perfect but with some regression      → CRS < 1.0 (proportional)
+       - No fix + regression                   → CRS can approach 0
+  3. RP is normalised to [0,1] before applying the penalty weight.
+  4. When error_set_previous is empty (first iteration baseline), a synthetic
+     "first-iteration CRS" is computed from static quality alone.
+"""
+
 import numpy as np
-from ..models.types import ErrorSet, CorrectionMetrics
-from ..models.schemas import CorrectionMetricsOutput
+import logging
+from typing import Set, Optional
+from ..models.types import ErrorSet
+from ..models.schemas import CorrectionMetricsOutput, EvaluationMetrics
 from .error_tracker import ErrorTracker
+
+logger = logging.getLogger(__name__)
 
 
 class CorrectionMetricsCalculator:
-    """Computes ERR, RP, TFP, and overall CRS."""
-    
+    """
+    Computes ERR, RP, TFP and overall CRS with calibrated weights.
+
+    Parameters
+    ----------
+    w_err   : weight for Error Resolution Rate     (default 0.50)
+    w_tfp   : weight for Targeted Fix Precision    (default 0.50)
+    w_rp_pen: penalty weight for Regression (multiplied into 1-RP term)
+              (default 0.40 — aggressive penalty for introducing new errors)
+    """
+
     def __init__(
         self,
-        w_err: float = 0.5,
-        w_rp: float = 0.3,
-        w_tfp: float = 0.2
+        w_err: float = 0.50,
+        w_tfp: float = 0.50,
+        w_rp_pen: float = 0.40,
     ):
-        """
-        Initialize with weights for CRS computation.
-        
-        Args:
-            w_err: Weight for Error Resolution Rate
-            w_rp: Weight for Regression Penalty (negative impact)
-            w_tfp: Weight for Targeted Fix Precision
-        """
+        if abs(w_err + w_tfp - 1.0) > 1e-6:
+            raise ValueError(
+                f"w_err + w_tfp must equal 1.0, got {w_err} + {w_tfp} = {w_err + w_tfp}"
+            )
         self.w_err = w_err
-        self.w_rp = w_rp
         self.w_tfp = w_tfp
+        self.w_rp_pen = w_rp_pen
         self.tracker = ErrorTracker()
-    
+
+    # ------------------------------------------------------------------
+    # Component metrics
+    # ------------------------------------------------------------------
+
     def compute_err(self, prev_errors: Set[int], curr_errors: Set[int]) -> float:
-        r"""
-        Error Resolution Rate: fraction of previous errors that were fixed.
-        
-        ERR = |E^(k) \ E^(k+1)| / |E^(k)|
+        """
+        Error Resolution Rate.
+        ERR = |E_prev \\ E_curr| / |E_prev|
+        Returns 1.0 if there were no previous errors (nothing to fix = perfect).
         """
         if len(prev_errors) == 0:
-            return 1.0  # No errors to fix
-        
-        fixed_errors = prev_errors - curr_errors
-        return len(fixed_errors) / len(prev_errors)
+            return 1.0
+        fixed = prev_errors - curr_errors
+        return len(fixed) / len(prev_errors)
 
-    def compute_rp(self, prev_errors: Set[int], curr_errors: Set[int], total_steps: int) -> float:
-        r"""
-        Regression Penalty: fraction of new errors introduced relative to previous errors.
-        
-        RP = |E^(k+1) \ E^(k)| / max(|E^(k)|, 1)
-        
-        Note: Normalized against previous error count, not total steps,
-        to make regression penalties meaningful even when total error count decreases.
+    def compute_rp_normalised(
+        self, prev_errors: Set[int], curr_errors: Set[int]
+    ) -> float:
+        """
+        Regression Penalty, normalised to [0, 1].
+        RP_raw = |E_curr \\ E_prev| / max(|E_prev|, 1)
+        RP_norm = min(RP_raw, 1.0)   (clamp so the multiplier stays in [0,1])
         """
         new_errors = curr_errors - prev_errors
-        
-        if len(prev_errors) == 0:
-            # No previous errors: any new error is severe
-            return float(len(new_errors)) if new_errors else 0.0
-        
-        return len(new_errors) / len(prev_errors)
-    
-    def compute_tfp(self, flagged_steps: Set[int], prev_errors: Set[int], 
-                     curr_errors: Set[int]) -> float:
-        r"""
-        Targeted Fix Precision: fraction of flagged steps that were fixed.
-        
-        TFP = |F^(k) \ E^(k+1)| / |F^(k)|
+        if not new_errors:
+            return 0.0
+        denom = max(len(prev_errors), 1)
+        rp_raw = len(new_errors) / denom
+        return min(rp_raw, 1.0)
+
+    def compute_tfp(
+        self,
+        flagged_steps: Set[int],
+        curr_errors: Set[int],
+    ) -> float:
+        """
+        Targeted Fix Precision.
+        TFP = |F \\ E_curr| / |F|
+        Returns 1.0 if nothing was flagged (evaluator found no specific issues).
         """
         if len(flagged_steps) == 0:
-            return 1.0  # Nothing flagged
-        
+            return 1.0
         fixed_flagged = flagged_steps - curr_errors
         return len(fixed_flagged) / len(flagged_steps)
-    
-    def detect_mixed_transition(self, prev_errors: Set[int], curr_errors: Set[int]) -> bool:
-        """
-        Detect if both errors were fixed AND new errors were introduced.
-        
-        Returns:
-            True if this is a mixed transition (progress + regression)
-        """
-        fixed = prev_errors - curr_errors
-        introduced = curr_errors - prev_errors
-        return bool(fixed) and bool(introduced)
-    
+
+    # ------------------------------------------------------------------
+    # Composite CRS
+    # ------------------------------------------------------------------
+
     def compute_crs(
         self,
         prev_error_set: ErrorSet,
         curr_error_set: ErrorSet,
         flagged_steps: Set[int],
-        total_steps_current: int
+        total_steps_current: int = 0,  # kept for API compat, unused now
     ) -> CorrectionMetricsOutput:
-        """Compute full Correction Reasoning Score."""
-        tracker = ErrorTracker()
-        prev_all = tracker.get_all_errors(prev_error_set)
-        curr_all = tracker.get_all_errors(curr_error_set)
-        
+        """
+        Compute the full Correction Reasoning Score.
+
+        Formula (multiplicative penalty):
+            quality = w_err * ERR + w_tfp * TFP
+            CRS_raw = quality * (1 - w_rp_pen * RP_norm)
+            CRS     = clip(CRS_raw, 0, 1)
+
+        Maximum achievable:
+            ERR=1, TFP=1, RP_norm=0 → CRS = 1.0 * 1.0 = 1.0  ✓
+        """
+        prev_all = self.tracker.get_all_errors(prev_error_set)
+        curr_all = self.tracker.get_all_errors(curr_error_set)
+
         err = self.compute_err(prev_all, curr_all)
-        rp = self.compute_rp(prev_all, curr_all, total_steps_current)  # Uses new formula
-        tfp = self.compute_tfp(flagged_steps, prev_all, curr_all)
-        
-        crs_raw = self.w_err * err - self.w_rp * rp + self.w_tfp * tfp
-        crs = np.clip(crs_raw, 0.0, 1.0)
-        
-        # Detect mixed transitions
-        is_mixed = self.detect_mixed_transition(prev_all, curr_all)
-        
+        rp_norm = self.compute_rp_normalised(prev_all, curr_all)
+        tfp = self.compute_tfp(flagged_steps, curr_all)
+
+        quality = self.w_err * err + self.w_tfp * tfp
+        crs_raw = quality * (1.0 - self.w_rp_pen * rp_norm)
+        crs = float(np.clip(crs_raw, 0.0, 1.0))
+
+        is_mixed = bool(prev_all - curr_all) and bool(curr_all - prev_all)
+
         if is_mixed:
-            import logging
-            logger = logging.getLogger(__name__)
             logger.warning(
-                f"Mixed transition detected: "
-                f"fixed {len(prev_all - curr_all)}, "
-                f"introduced {len(curr_all - prev_all)}, "
-                f"CRS={crs:.3f} (raw={crs_raw:.3f})"
+                "Mixed transition: fixed=%d, introduced=%d, CRS=%.3f (raw=%.3f)",
+                len(prev_all - curr_all),
+                len(curr_all - prev_all),
+                crs,
+                crs_raw,
             )
-        
+
         return CorrectionMetricsOutput(
             error_resolution_rate=err,
-            regression_penalty=rp,
+            regression_penalty=rp_norm,         # normalised [0,1]
             targeted_fix_precision=tfp,
             correction_reasoning_score=crs,
-            crs_raw=crs_raw,  # NEW
+            crs_raw=crs_raw,
             errors_fixed=len(prev_all - curr_all),
             errors_introduced=len(curr_all - prev_all),
             flagged_fixed=len(flagged_steps - curr_all),
             total_flagged=len(flagged_steps),
-            is_mixed_transition=is_mixed  # NEW
+            is_mixed_transition=is_mixed,
+            prev_error_count=len(prev_all),
+            curr_error_count=len(curr_all),
+        )
+
+    def compute_first_iteration_crs(
+        self, metrics: EvaluationMetrics
+    ) -> CorrectionMetricsOutput:
+        """
+        Synthetic CRS for the very first iteration (no previous error set).
+        Derived purely from static quality scores rather than delta-tracking.
+
+        Formula:
+            static_quality = (completeness_score / 5.0) * 0.6
+                           + (assumption_use_score / 5.0) * 0.4
+            error_penalty  = num_errors / (num_errors + 1)   [sigmoid-like]
+            CRS_first      = static_quality * (1 - 0.5 * error_penalty)
+        """
+        static_quality = (
+            (metrics.completeness_score / 5.0) * 0.6
+            + (metrics.assumption_use_score / 5.0) * 0.4
+        )
+        n_errors = metrics.total_errors
+        error_penalty = n_errors / (n_errors + 1) if n_errors >= 0 else 0.0
+        crs_raw = static_quality * (1.0 - 0.5 * error_penalty)
+        crs = float(np.clip(crs_raw, 0.0, 1.0))
+
+        # Build a dummy "previous" error set = empty, "current" = all errors found
+        empty_set: ErrorSet = {
+            "hallucinations": set(),
+            "missing_steps": set(),
+            "operator_errors": set(),
+            "assumption_violations": set(),
+        }
+        curr_set = ErrorTracker.error_set_from_metrics(metrics)
+        curr_all = ErrorTracker.get_all_errors(curr_set)
+        flagged = set(metrics.flagged_steps)
+
+        return CorrectionMetricsOutput(
+            error_resolution_rate=0.0,      # No prior to resolve from
+            regression_penalty=0.0,
+            targeted_fix_precision=1.0,     # Nothing was flagged before
+            correction_reasoning_score=crs,
+            crs_raw=crs_raw,
+            errors_fixed=0,
+            errors_introduced=len(curr_all),
+            flagged_fixed=0,
+            total_flagged=len(flagged),
+            is_mixed_transition=False,
+            prev_error_count=0,
+            curr_error_count=len(curr_all),
         )
