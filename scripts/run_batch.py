@@ -1,15 +1,22 @@
 # ============================================================================
 # File: scripts/run_batch.py
 # ============================================================================
-"""Batch processor with full state tracking, CSV generation, and provider support."""
+"""Batch processor with full state tracking, CSV generation, and provider support.
+
+Configuration priority (highest → lowest):
+  1. CLI flags (always win if explicitly passed)
+  2. --config path/to/default.yaml
+  3. Hardcoded script defaults
+"""
 
 import pandas as pd
 import json
 import argparse
 import sys
 import time
+import yaml
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -18,6 +25,96 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.graph.workflow import ProofWorkflow
 from src.config.temperatures import TemperatureConfig
 
+
+# ============================================================================
+# YAML config loader
+# ============================================================================
+
+def load_yaml_config(config_path: str) -> Dict[str, Any]:
+    """Load and return the YAML config as a nested dict. Returns {} on failure."""
+    path = Path(config_path)
+    if not path.exists():
+        print(f"⚠️  Config file not found: {config_path}. Using CLI/script defaults.")
+        return {}
+    with open(path, "r", encoding="utf-8") as f:
+        cfg = yaml.safe_load(f) or {}
+    print(f"✅ Loaded config: {config_path}")
+    return cfg
+
+
+def _get(cfg: dict, *keys, default=None):
+    """Safe nested dict accessor: _get(cfg, 'models', 'prover', 'name')"""
+    node = cfg
+    for key in keys:
+        if not isinstance(node, dict):
+            return default
+        node = node.get(key, default)
+        if node is default:
+            return default
+    return node
+
+
+def merge_config_with_args(args: argparse.Namespace, cfg: dict) -> argparse.Namespace:
+    """
+    Apply YAML values only for args that were NOT explicitly set on the CLI.
+    CLI flags always take priority over the YAML file.
+    """
+    # Track which args were explicitly passed on the CLI
+    # argparse doesn't expose this directly, so we compare against sentinel defaults
+    # set in the parser (None = "user didn't pass this flag").
+
+    # --- Models ---
+    if args.model is None:
+        yaml_prover = _get(cfg, "models", "prover", "name")
+        if yaml_prover:
+            args.model = yaml_prover
+
+    if args.judges is None:
+        yaml_judges = _get(cfg, "models", "evaluators", "models")
+        if yaml_judges:
+            args.judges = yaml_judges
+
+    if not args.multi_judge:  # False is the argparse default (store_true)
+        yaml_multi = _get(cfg, "models", "evaluators", "use_multi_judge")
+        if yaml_multi is not None:
+            args.multi_judge = bool(yaml_multi)
+
+    # --- Workflow ---
+    if args.max_iter == _UNSET_INT:
+        yaml_max_iter = _get(cfg, "workflow", "max_iterations")
+        args.max_iter = int(yaml_max_iter) if yaml_max_iter is not None else 3
+
+    if args.timeout == _UNSET_INT:
+        args.timeout = 600  # no yaml key for this, just apply script default
+
+    if args.max_retries == _UNSET_INT:
+        args.max_retries = 3  # same
+
+    # --- Temperatures ---
+    if args.temp_generation == _UNSET_FLOAT:
+        args.temp_generation = float(_get(cfg, "temperatures", "generation", default=0.7))
+
+    if args.temp_correction == _UNSET_FLOAT:
+        args.temp_correction = float(_get(cfg, "temperatures", "correction", default=0.4))
+
+    if args.temp_evaluation == _UNSET_FLOAT:
+        args.temp_evaluation = float(_get(cfg, "temperatures", "evaluation", default=0.05))
+
+    if args.temp_verification == _UNSET_FLOAT:
+        args.temp_verification = float(_get(cfg, "temperatures", "verification", default=0.05))
+
+    return args
+
+
+# Sentinel values — the parser uses these as defaults so merge_config_with_args
+# can tell "user didn't pass this" from "user explicitly passed the default value".
+_UNSET_INT   = -9999
+_UNSET_FLOAT = -9999.0
+
+
+# ============================================================================
+# BatchProcessor (unchanged logic, config-aware construction)
+# ============================================================================
 
 class BatchProcessor:
     """Process multiple algorithms with full tracking and CSV output."""
@@ -35,6 +132,7 @@ class BatchProcessor:
         timeout: int = 600,
         max_retries: int = 3,
         temp_config: TemperatureConfig = None,
+        yaml_config: dict = None,      # stored for reference / logging only
     ):
         self.input_csv = input_csv
         self.output_dir = Path(output_dir)
@@ -49,6 +147,7 @@ class BatchProcessor:
         self.timeout = timeout
         self.max_retries = max_retries
         self.temp_config = temp_config or TemperatureConfig()
+        self.yaml_config = yaml_config or {}
 
         self.output_csv = self.output_dir / "results.csv"
         self.output_json = self.output_dir / "batch_execution_log.json"
@@ -72,6 +171,7 @@ class BatchProcessor:
                         "evaluation": self.temp_config.evaluation,
                         "verification": self.temp_config.verification,
                     },
+                    "yaml_config_used": bool(self.yaml_config),
                 },
             },
             "algorithms": [],
@@ -89,11 +189,13 @@ class BatchProcessor:
         print(f"Output          : {self.output_dir}")
         print(f"Provider        : {self.provider_name}")
         print(f"Model           : {self.prover_model}")
+        print(f"Judges          : {', '.join(self.evaluator_models)}")
         print(f"Multi-Judge     : {self.use_multi_judge}")
         print(f"Max Iterations  : {self.max_iterations}")
         print(f"Temperatures    : gen={self.temp_config.generation}, "
               f"corr={self.temp_config.correction}, "
-              f"eval={self.temp_config.evaluation}")
+              f"eval={self.temp_config.evaluation}, "
+              f"verif={self.temp_config.verification}")
         print(f"{'='*80}\n")
 
         try:
@@ -395,46 +497,117 @@ class BatchProcessor:
         print("\n" + text)
 
 
+# ============================================================================
+# CLI
+# ============================================================================
+
 def main():
-    parser = argparse.ArgumentParser(description="Batch process convergence proofs")
-    parser.add_argument("--input", required=True)
-    parser.add_argument("--output", default="batch_results")
-    parser.add_argument(
-        "--provider", default="nvidia",
-        choices=["nvidia", "openrouter", "openai", "anthropic"],
+    parser = argparse.ArgumentParser(
+        description="Batch process convergence proofs",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Configuration priority (highest → lowest):
+  1. CLI flags passed explicitly
+  2. --config <yaml file>  (e.g. config/default.yaml)
+  3. Hardcoded script defaults
+
+Examples:
+  # Use default.yaml for everything
+  python scripts/run_batch.py --input data/algos.csv --config config/default.yaml
+
+  # Use default.yaml but override the model
+  python scripts/run_batch.py --input data/algos.csv --config config/default.yaml --model openai/gpt-4o
+
+  # No YAML, all flags
+  python scripts/run_batch.py --input data/algos.csv --provider nvidia --model openai/gpt-oss-120b
+        """,
     )
-    parser.add_argument("--api-key", default=None)
-    parser.add_argument("--model", default=None)
-    parser.add_argument("--judges", nargs="+", default=None)
-    parser.add_argument("--multi-judge", action="store_true")
-    parser.add_argument("--max-iter", type=int, default=3)
-    parser.add_argument("--timeout", type=int, default=600)
-    parser.add_argument("--max-retries", type=int, default=3)
-    parser.add_argument("--temp-generation", type=float, default=0.7)
-    parser.add_argument("--temp-correction", type=float, default=0.4)
-    parser.add_argument("--temp-evaluation", type=float, default=0.05)
-    parser.add_argument("--temp-verification", type=float, default=0.05)
+
+    # ── Required ──────────────────────────────────────────────────────────────
+    parser.add_argument("--input", required=True,
+                        help="Path to input CSV (must have 'Problem Statement' column)")
+
+    # ── Config file ───────────────────────────────────────────────────────────
+    parser.add_argument("--config", default=None, metavar="YAML",
+                        help="Path to YAML config file (e.g. config/default.yaml). "
+                             "CLI flags override values from this file.")
+
+    # ── Output ────────────────────────────────────────────────────────────────
+    parser.add_argument("--output", default="batch_results",
+                        help="Output directory (default: batch_results)")
+
+    # ── Provider / models — use None as sentinel so YAML can fill them in ─────
+    parser.add_argument("--provider", default="nvidia",
+                        choices=["nvidia", "openrouter", "openai", "anthropic"],
+                        help="LLM provider (default: nvidia)")
+    parser.add_argument("--api-key", default=None,
+                        help="API key (can also be set via .env file)")
+    parser.add_argument("--model", default=None,
+                        help="Prover model name. Overrides YAML models.prover.name")
+    parser.add_argument("--judges", nargs="+", default=None,
+                        help="Judge model name(s). Overrides YAML models.evaluators.models")
+    parser.add_argument("--multi-judge", action="store_true", default=False,
+                        help="Enable multi-judge consensus. Overrides YAML models.evaluators.use_multi_judge")
+
+    # ── Workflow — sentinel defaults so YAML can fill them in ─────────────────
+    parser.add_argument("--max-iter", type=int, default=_UNSET_INT,
+                        help="Max correction iterations (default: 3, or from YAML workflow.max_iterations)")
+    parser.add_argument("--timeout", type=int, default=_UNSET_INT,
+                        help="Per-algorithm timeout in seconds (default: 600)")
+    parser.add_argument("--max-retries", type=int, default=_UNSET_INT,
+                        help="Max LLM call retries (default: 3)")
+
+    # ── Temperatures — sentinel defaults so YAML can fill them in ─────────────
+    parser.add_argument("--temp-generation", type=float, default=_UNSET_FLOAT,
+                        help="Prover generation temperature (default: 0.7, or from YAML temperatures.generation)")
+    parser.add_argument("--temp-correction", type=float, default=_UNSET_FLOAT,
+                        help="Prover correction temperature (default: 0.4, or from YAML temperatures.correction)")
+    parser.add_argument("--temp-evaluation", type=float, default=_UNSET_FLOAT,
+                        help="Judge evaluation temperature (default: 0.05, or from YAML temperatures.evaluation)")
+    parser.add_argument("--temp-verification", type=float, default=_UNSET_FLOAT,
+                        help="Judge verification temperature (default: 0.05, or from YAML temperatures.verification)")
 
     args = parser.parse_args()
     load_dotenv()
 
+    # ── Load YAML and merge (YAML fills in anything still at sentinel) ─────────
+    yaml_cfg = load_yaml_config(args.config) if args.config else {}
+    args = merge_config_with_args(args, yaml_cfg)
+
+    # ── Final fallback: provider-specific model defaults ──────────────────────
     if args.model is None:
-        defaults = {
-            "nvidia": "openai/gpt-oss-120b",
-            "openrouter": "anthropic/claude-3.5-sonnet",
-            "openai": "gpt-4",
-            "anthropic": "claude-3-5-sonnet-20241022",
+        provider_defaults = {
+            "nvidia":      "openai/gpt-oss-120b",
+            "openrouter":  "anthropic/claude-3.5-sonnet",
+            "openai":      "gpt-4",
+            "anthropic":   "claude-3-5-sonnet-20241022",
         }
-        args.model = defaults[args.provider]
-        print(f"Using default model: {args.model}")
+        args.model = provider_defaults[args.provider]
+        print(f"Using provider default model: {args.model}")
 
     evaluator_models = args.judges or [args.model]
+
     temp_config = TemperatureConfig(
         generation=args.temp_generation,
         correction=args.temp_correction,
         evaluation=args.temp_evaluation,
         verification=args.temp_verification,
     )
+
+    # ── Print final resolved config so it's clear what's actually running ─────
+    print(f"\n{'─'*80}")
+    print("RESOLVED CONFIGURATION")
+    print(f"{'─'*80}")
+    print(f"  Config file   : {args.config or '(none — using CLI/defaults)'}")
+    print(f"  Provider      : {args.provider}")
+    print(f"  Prover model  : {args.model}")
+    print(f"  Judge models  : {', '.join(evaluator_models)}")
+    print(f"  Multi-judge   : {args.multi_judge}")
+    print(f"  Max iter      : {args.max_iter}")
+    print(f"  Timeout       : {args.timeout}s")
+    print(f"  Temperatures  : gen={temp_config.generation}  corr={temp_config.correction}  "
+          f"eval={temp_config.evaluation}  verif={temp_config.verification}")
+    print(f"{'─'*80}\n")
 
     BatchProcessor(
         input_csv=args.input,
@@ -448,6 +621,7 @@ def main():
         timeout=args.timeout,
         max_retries=args.max_retries,
         temp_config=temp_config,
+        yaml_config=yaml_cfg,
     ).process()
 
 
