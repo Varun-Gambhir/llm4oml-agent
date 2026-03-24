@@ -85,7 +85,7 @@ def merge_config_with_args(args: argparse.Namespace, cfg: dict) -> argparse.Name
         args.max_iter = int(yaml_max_iter) if yaml_max_iter is not None else 3
 
     if args.timeout == _UNSET_INT:
-        args.timeout = 1600  # no yaml key for this, just apply script default
+        args.timeout = 300  # no yaml key for this, just apply script default
 
     if args.max_retries == _UNSET_INT:
         args.max_retries = 3  # same
@@ -129,10 +129,11 @@ class BatchProcessor:
         api_key: str = None,
         use_multi_judge: bool = False,
         max_iterations: int = 3,
-        timeout: int = 1600,
+        timeout: int = 300,
         max_retries: int = 3,
         temp_config: TemperatureConfig = None,
         yaml_config: dict = None,      # stored for reference / logging only
+        per_judge_timeout: int = 90,
     ):
         self.input_csv = input_csv
         self.output_dir = Path(output_dir)
@@ -176,6 +177,7 @@ class BatchProcessor:
             },
             "algorithms": [],
         }
+        self.per_judge_timeout = per_judge_timeout
 
     # ------------------------------------------------------------------
     # Main entry
@@ -269,6 +271,7 @@ class BatchProcessor:
             max_retries=self.max_retries,
             output_dir=str(algo_dir),
             temp_config=self.temp_config,
+            per_judge_timeout=self.per_judge_timeout,
         )
 
         final_state, tracker = workflow.run(algo_text, assump_text)
@@ -593,6 +596,7 @@ Examples:
         evaluation=args.temp_evaluation,
         verification=args.temp_verification,
     )
+    per_judge_timeout = int(_get(yaml_cfg, "models", "evaluators", "per_judge_timeout", default=90))
 
     # ── Print final resolved config so it's clear what's actually running ─────
     print(f"\n{'─'*80}")
@@ -622,6 +626,7 @@ Examples:
         max_retries=args.max_retries,
         temp_config=temp_config,
         yaml_config=yaml_cfg,
+        per_judge_timeout=per_judge_timeout,
     ).process()
 
 

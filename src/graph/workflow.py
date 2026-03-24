@@ -60,6 +60,7 @@ class ProofWorkflow:
         temp_config: TemperatureConfig = DEFAULT_TEMPERATURES,
         # ── ABLATION PATCH ────────────────────────────────────────────────────
         crs_weights: Optional[Dict[str, float]] = None,
+        per_judge_timeout: int = 90,
         # ─────────────────────────────────────────────────────────────────────
     ):
         if evaluator_models is None:
@@ -81,6 +82,7 @@ class ProofWorkflow:
             max_retries=max_retries,
             temp_config=temp_config,
             crs_weights=crs_weights,        # ← ABLATION PATCH
+            per_judge_timeout=per_judge_timeout,
         )
 
         self.config = {

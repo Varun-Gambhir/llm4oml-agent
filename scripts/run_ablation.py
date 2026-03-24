@@ -824,7 +824,7 @@ def main():
                              "0.1 → 81 configs)")
     parser.add_argument("--max-iter",   type=int,   default=None,
                         help="Override max iterations (default: from YAML)")
-    parser.add_argument("--timeout",    type=int,   default=600)
+    parser.add_argument("--timeout",    type=int,   default=300)
     parser.add_argument("--max-retries",type=int,   default=3)
     parser.add_argument("--default-w-err", type=float, default=0.5,
                         help="Default w_err to annotate on plots")

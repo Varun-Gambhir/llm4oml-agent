@@ -33,7 +33,7 @@ def main():
 
     # Generation parameters
     parser.add_argument("--max-iter", type=int, default=3)
-    parser.add_argument("--timeout", type=int, default=600)
+    parser.add_argument("--timeout", type=int, default=90)
     parser.add_argument("--max-retries", type=int, default=3)
     parser.add_argument("--output", default="output")
 
@@ -76,6 +76,7 @@ def main():
         max_retries=args.max_retries,
         output_dir=args.output,
         temp_config=temp_config,
+        per_judge_timeout=90,
     )
 
     print(f"\nProvider       : {args.provider}")

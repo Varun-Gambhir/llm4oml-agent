@@ -43,7 +43,9 @@ class MultiJudgeEvaluator:
         max_retries: int = 3,
         outlier_threshold: float = 2.0,
         temp_config: TemperatureConfig = DEFAULT_TEMPERATURES,
+        per_judge_timeout: int = 90,
     ):
+        self.per_judge_timeout = per_judge_timeout
         self.judges = [
             SingleJudge(
                 provider_name=provider_name,
@@ -65,13 +67,9 @@ class MultiJudgeEvaluator:
     # Public entry point
     # ------------------------------------------------------------------
 
-    def evaluate_parallel(
-        self,
-        proof: str,
-        feedback: Optional[str] = None,
-        iteration: int = 1,
-    ) -> ConsensusEvaluation:
-        evaluations: List[JudgeEvaluation] = []
+    def evaluate_parallel(self, proof, feedback=None, iteration=1):
+        evaluations = []
+        PER_JUDGE_TIMEOUT = self.per_judge_timeout
 
         with ThreadPoolExecutor(max_workers=len(self.judges)) as executor:
             futures = {
@@ -80,17 +78,22 @@ class MultiJudgeEvaluator:
                 ): judge
                 for judge in self.judges
             }
-            for future in as_completed(futures):
+            # Collect with individual deadlines
+            for future, judge in futures.items():
                 try:
-                    evaluations.append(future.result())
-                except Exception as exc:
-                    logger.error(
-                        "[MultiJudge] %s failed: %s", futures[future].judge_id, exc
+                    result = future.result(timeout=PER_JUDGE_TIMEOUT)
+                    evaluations.append(result)
+                except TimeoutError:
+                    logger.warning(
+                        "[MultiJudge] %s timed out after %ds — skipping",
+                        judge.judge_id, PER_JUDGE_TIMEOUT
                     )
+                    future.cancel()
+                except Exception as exc:
+                    logger.error("[MultiJudge] %s failed: %s", judge.judge_id, exc)
 
         if not evaluations:
-            raise RuntimeError("All judges failed. Cannot form consensus.")
-
+            raise RuntimeError("All judges failed or timed out. Cannot form consensus.")
         return self._compute_consensus(evaluations)
 
     # ------------------------------------------------------------------

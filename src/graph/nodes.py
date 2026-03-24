@@ -51,6 +51,7 @@ class WorkflowNodes:
         temp_config: TemperatureConfig = DEFAULT_TEMPERATURES,
         # ── ABLATION PATCH ────────────────────────────────────────────────────
         crs_weights: Optional[Dict[str, float]] = None,
+        per_judge_timeout: int = 90,
         # ─────────────────────────────────────────────────────────────────────
     ):
         self.temp_config = temp_config
@@ -74,6 +75,7 @@ class WorkflowNodes:
                 timeout=timeout,
                 max_retries=max_retries,
                 temp_config=temp_config,
+                per_judge_timeout=per_judge_timeout,
             )
         else:
             self.evaluator = SingleJudge(

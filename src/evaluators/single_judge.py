@@ -51,7 +51,7 @@ class SingleJudge(BaseEvaluator):
             temperature=temperature,
             max_tokens=max_tokens,
             timeout=timeout,
-            max_retries=max_retries,
+            max_retries=1,
         )
         self.prompt_manager = PromptManager()
 
