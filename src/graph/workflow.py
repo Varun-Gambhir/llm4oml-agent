@@ -1,10 +1,17 @@
 # ============================================================================
-# File: src/graph/workflow.py
+# File: src/graph/workflow.py  (patched for ablation study — crs_weights param added)
 # ============================================================================
-"""LangGraph workflow with provider abstraction and per-phase temperatures."""
+"""LangGraph workflow with provider abstraction, per-phase temperatures,
+and optional CRS weight injection for ablation studies.
+
+ABLATION PATCH (v3.1):
+  ProofWorkflow now accepts `crs_weights: dict` and forwards it to
+  WorkflowNodes, which passes it to CorrectionMetricsCalculator.
+  No other behaviour changes.
+"""
 
 import logging
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict
 
 from langgraph.graph import StateGraph, END
 
@@ -31,6 +38,11 @@ class ProofWorkflow:
         The `temperature` constructor parameter sets the prover's instance-
         default but is overridden per-call by the phase logic. Judges always
         use near-zero temperature regardless of this setting.
+
+    CRS weight injection (ablation):
+        Pass `crs_weights={"w_err": 0.6, "w_rp_pen": 0.3}` to override the
+        default CRS formula weights for this run.  w_tfp is derived as
+        1 - w_err automatically.
     """
 
     def __init__(
@@ -41,11 +53,14 @@ class ProofWorkflow:
         api_key: Optional[str] = None,
         use_multi_judge: bool = True,
         max_iterations: int = 3,
-        temperature: float = 0.5,       # prover instance default (overridden per phase)
+        temperature: float = 0.5,
         timeout: int = 600,
         max_retries: int = 3,
         output_dir: str = "output",
         temp_config: TemperatureConfig = DEFAULT_TEMPERATURES,
+        # ── ABLATION PATCH ────────────────────────────────────────────────────
+        crs_weights: Optional[Dict[str, float]] = None,
+        # ─────────────────────────────────────────────────────────────────────
     ):
         if evaluator_models is None:
             evaluator_models = [prover_model]
@@ -53,6 +68,7 @@ class ProofWorkflow:
         self.max_iterations = max_iterations
         self.state_manager = StateManager()
         self.temp_config = temp_config
+        self.crs_weights = crs_weights or {}
 
         self.nodes = WorkflowNodes(
             provider_name=provider_name,
@@ -64,6 +80,7 @@ class ProofWorkflow:
             timeout=timeout,
             max_retries=max_retries,
             temp_config=temp_config,
+            crs_weights=crs_weights,        # ← ABLATION PATCH
         )
 
         self.config = {
@@ -80,9 +97,11 @@ class ProofWorkflow:
             },
             "timeout": timeout,
             "max_retries": max_retries,
+            # ── ABLATION PATCH: record injected weights in config ──────────
+            "crs_weights": self.crs_weights,
+            # ─────────────────────────────────────────────────────────────────
         }
 
-        # ExecutionTracker is fresh per run (set in run())
         self.output_dir = output_dir
         self.app = self._build_graph()
 
@@ -124,6 +143,11 @@ class ProofWorkflow:
         print(f"\n{'='*60}")
         print(f"ITERATION {state['iteration']}: EVALUATION")
         print(f"  Temperature: {self.temp_config.evaluation:.2f} (deterministic)")
+        # ── show active weights ───────────────────────────────────────────────
+        if self.crs_weights:
+            w_err = self.crs_weights.get("w_err", 0.5)
+            print(f"  CRS Weights: w_err={w_err:.2f}  w_tfp={1-w_err:.2f}  "
+                  f"w_rp={self.crs_weights.get('w_rp_pen', 0.4):.2f}")
         print(f"{'='*60}")
 
         result = self.nodes.evaluator_node(state)
@@ -139,7 +163,7 @@ class ProofWorkflow:
         if cm:
             crs = cm.get("correction_reasoning_score", 0) if isinstance(cm, dict) else 0
             err = cm.get("error_resolution_rate", 0) if isinstance(cm, dict) else 0
-            rp = cm.get("regression_penalty", 0) if isinstance(cm, dict) else 0
+            rp  = cm.get("regression_penalty", 0) if isinstance(cm, dict) else 0
             tfp = cm.get("targeted_fix_precision", 0) if isinstance(cm, dict) else 0
             print(f"  ✓ CRS: {crs:.3f}  (ERR={err:.3f}, RP={rp:.3f}, TFP={tfp:.3f})")
 
@@ -172,6 +196,10 @@ class ProofWorkflow:
         print(f"#   Temperatures: gen={self.temp_config.generation}, "
               f"corr={self.temp_config.correction}, "
               f"eval={self.temp_config.evaluation}")
+        if self.crs_weights:
+            w_err = self.crs_weights.get("w_err", 0.5)
+            print(f"#   CRS Weights : w_err={w_err:.2f}  w_tfp={1-w_err:.2f}  "
+                  f"w_rp={self.crs_weights.get('w_rp_pen', 0.4):.2f}")
         print(f"{'#'*60}\n")
 
         final_state = None

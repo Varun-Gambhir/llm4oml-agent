@@ -85,7 +85,7 @@ def merge_config_with_args(args: argparse.Namespace, cfg: dict) -> argparse.Name
         args.max_iter = int(yaml_max_iter) if yaml_max_iter is not None else 3
 
     if args.timeout == _UNSET_INT:
-        args.timeout = 600  # no yaml key for this, just apply script default
+        args.timeout = 1600  # no yaml key for this, just apply script default
 
     if args.max_retries == _UNSET_INT:
         args.max_retries = 3  # same
@@ -129,7 +129,7 @@ class BatchProcessor:
         api_key: str = None,
         use_multi_judge: bool = False,
         max_iterations: int = 3,
-        timeout: int = 600,
+        timeout: int = 1600,
         max_retries: int = 3,
         temp_config: TemperatureConfig = None,
         yaml_config: dict = None,      # stored for reference / logging only

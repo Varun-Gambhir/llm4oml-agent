@@ -1,5 +1,5 @@
 # ============================================================================
-# File: src/graph/nodes.py
+# File: src/graph/nodes.py  (patched for ablation study — crs_weights param added)
 # ============================================================================
 """
 LangGraph node implementations.
@@ -11,6 +11,12 @@ Key fixes over v2:
      ERR, RP, and TFP are computed correctly.
   3. flagged_steps_current is always populated and passed through state so
      TFP has non-trivial data to work with.
+
+ABLATION PATCH (v3.1):
+  4. WorkflowNodes now accepts an optional `crs_weights` dict that is forwarded
+     to CorrectionMetricsCalculator.  This lets the ablation orchestrator swap
+     weights without touching any other part of the pipeline.
+     Default is None → uses the existing defaults (0.50 / 0.50 / 0.40).
 """
 
 import logging
@@ -43,6 +49,9 @@ class WorkflowNodes:
         timeout: int = 600,
         max_retries: int = 3,
         temp_config: TemperatureConfig = DEFAULT_TEMPERATURES,
+        # ── ABLATION PATCH ────────────────────────────────────────────────────
+        crs_weights: Optional[Dict[str, float]] = None,
+        # ─────────────────────────────────────────────────────────────────────
     ):
         self.temp_config = temp_config
 
@@ -79,7 +88,28 @@ class WorkflowNodes:
             )
 
         self.use_multi_judge = use_multi_judge
-        self.correction_calc = CorrectionMetricsCalculator()
+
+        # ── ABLATION PATCH: inject weights into calculator ────────────────────
+        _w = crs_weights or {}
+        w_err    = float(_w.get("w_err",    0.50))
+        w_tfp    = float(_w.get("w_tfp",    1.0 - w_err))   # honour explicit or derive
+        w_rp_pen = float(_w.get("w_rp_pen", 0.40))
+
+        # Normalise so w_err + w_tfp == 1.0 (required by CorrectionMetricsCalculator)
+        total = w_err + w_tfp
+        if abs(total - 1.0) > 1e-4:
+            logger.warning(
+                "crs_weights w_err+w_tfp=%.4f ≠ 1.0; normalising.", total
+            )
+            w_err = w_err / total
+            w_tfp = w_tfp / total
+
+        self.correction_calc = CorrectionMetricsCalculator(
+            w_err=w_err,
+            w_tfp=w_tfp,
+            w_rp_pen=w_rp_pen,
+        )
+        # ─────────────────────────────────────────────────────────────────────
 
     # ------------------------------------------------------------------
     # Prover node
