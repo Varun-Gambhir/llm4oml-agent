@@ -24,7 +24,6 @@ class NVIDIAProvider(BaseLLMProvider):
             temperature=temperature,
             max_tokens=self.max_tokens,
             top_p=1,
-            timeout=self.timeout,
         )
 
     def _make_request(
