@@ -35,7 +35,7 @@ class SingleJudge(BaseEvaluator):
         judge_id: str,
         api_key: Optional[str] = None,
         temperature: float = 0.05,   # default override — evaluation must be near-0
-        max_tokens: int = 8192,
+        max_tokens: int = 1500,
         timeout: int = 600,
         max_retries: int = 3,
         temp_config: TemperatureConfig = DEFAULT_TEMPERATURES,
@@ -51,7 +51,7 @@ class SingleJudge(BaseEvaluator):
             temperature=temperature,
             max_tokens=max_tokens,
             timeout=timeout,
-            max_retries=1,
+            max_retries=max_retries,
         )
         self.prompt_manager = PromptManager()
 
@@ -100,6 +100,7 @@ class SingleJudge(BaseEvaluator):
         """
         format_instructions = (
             "\n\nIMPORTANT: You MUST respond with ONLY valid JSON. No text before or after. "
+            "DO NOT output any reasoning, <think> tags, or conversational text. Output the JSON object immediately. "
             "The JSON must have these exact keys: hallucination_error (bool), missing_step (bool), "
             "operator_error (bool), completeness_score (int 0-5), assumption_use_score (int 0-5), "
             "overall_verdict (str: PASS|PASS_MINOR|CONDITIONAL|FAIL|REJECT), "

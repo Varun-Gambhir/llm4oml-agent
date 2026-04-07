@@ -38,14 +38,14 @@ class MultiJudgeEvaluator:
         judge_models: List[str],
         api_key: Optional[str] = None,
         temperature: float = 0.05,   # always near-zero for evaluation
-        max_tokens: int = 8192,
+        max_tokens: int = 2000,
         timeout: int = 600,
         max_retries: int = 3,
         outlier_threshold: float = 2.0,
         temp_config: TemperatureConfig = DEFAULT_TEMPERATURES,
         per_judge_timeout: int = 600,
     ):
-        self.per_judge_timeout = per_judge_timeout
+        self.per_judge_timeout = 600
         self.judges = [
             SingleJudge(
                 provider_name=provider_name,
@@ -69,7 +69,7 @@ class MultiJudgeEvaluator:
 
     def evaluate_parallel(self, proof, feedback=None, iteration=1):
         evaluations = []
-        PER_JUDGE_TIMEOUT = self.per_judge_timeout
+        PER_JUDGE_TIMEOUT = 600
 
         with ThreadPoolExecutor(max_workers=len(self.judges)) as executor:
             futures = {

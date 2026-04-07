@@ -40,7 +40,7 @@ poetry.lock
 # ============================================================================
 logs/
 output/
-batch_results/
+batch_result*/
 *.log
 *.out
 *.err
