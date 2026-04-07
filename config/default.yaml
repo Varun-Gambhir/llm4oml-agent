@@ -6,7 +6,7 @@ models:
     name: "openai/gpt-oss-20b"
   evaluators:
     use_multi_judge: true
-    per_judge_timeout: 90
+    per_judge_timeout: 600
     models:
       - "openai/gpt-oss-120b"
       - "meta/llama-3.1-70b-instruct"

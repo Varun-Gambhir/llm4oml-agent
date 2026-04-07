@@ -45,5 +45,10 @@ class NVIDIAProvider(BaseLLMProvider):
             else:
                 lc_messages.append(HumanMessage(content=msg["content"]))
 
-        response = client.invoke(lc_messages)
-        return response.content
+        # Use stream() instead of invoke() to prevent 504 Gateway Timeouts
+        # on requests that take a long time to generate (e.g. reasoning models
+        # outputting <think> blocks). Stream keeps the connection actively receiving bytes.
+        full_text = []
+        for chunk in client.stream(lc_messages):
+            full_text.append(str(chunk.content))
+        return "".join(full_text)

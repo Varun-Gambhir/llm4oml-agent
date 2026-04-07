@@ -133,7 +133,7 @@ class BatchProcessor:
         max_retries: int = 3,
         temp_config: TemperatureConfig = None,
         yaml_config: dict = None,      # stored for reference / logging only
-        per_judge_timeout: int = 90,
+        per_judge_timeout: int = 600,
     ):
         self.input_csv = input_csv
         self.output_dir = Path(output_dir)
@@ -596,7 +596,7 @@ Examples:
         evaluation=args.temp_evaluation,
         verification=args.temp_verification,
     )
-    per_judge_timeout = int(_get(yaml_cfg, "models", "evaluators", "per_judge_timeout", default=90))
+    per_judge_timeout = int(_get(yaml_cfg, "models", "evaluators", "per_judge_timeout", default=600))
 
     # ── Print final resolved config so it's clear what's actually running ─────
     print(f"\n{'─'*80}")

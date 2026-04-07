@@ -76,7 +76,7 @@ def main():
         max_retries=args.max_retries,
         output_dir=args.output,
         temp_config=temp_config,
-        per_judge_timeout=90,
+        per_judge_timeout=600,
     )
 
     print(f"\nProvider       : {args.provider}")

@@ -43,7 +43,7 @@ class MultiJudgeEvaluator:
         max_retries: int = 3,
         outlier_threshold: float = 2.0,
         temp_config: TemperatureConfig = DEFAULT_TEMPERATURES,
-        per_judge_timeout: int = 90,
+        per_judge_timeout: int = 600,
     ):
         self.per_judge_timeout = per_judge_timeout
         self.judges = [
