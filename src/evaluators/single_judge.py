@@ -119,7 +119,8 @@ class SingleJudge(BaseEvaluator):
                 if result is not None:
                     return result
                 logger.warning(
-                    "[%s] JSON parse attempt %d failed", self.judge_id, attempt_idx + 1
+                    "[%s] JSON parse attempt %d failed. Output start: %s ...", 
+                    self.judge_id, attempt_idx + 1, response[:200].replace('\n', ' ')
                 )
             except Exception as exc:
                 logger.warning(
@@ -130,26 +131,55 @@ class SingleJudge(BaseEvaluator):
 
     def _parse_response(self, text: str) -> Optional[EvaluationMetrics]:
         """Extract and validate JSON from LLM response text."""
+        # Strip out <think> blocks if reasoning models still emitted them
+        text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+        
         # 1. Try ```json ... ```
         match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
         if match:
             json_str = match.group(1)
+            json_str = re.sub(r",\s*([}\]])", r"\1", json_str)
+            try:
+                data = json.loads(json_str)
+            except json.JSONDecodeError:
+                pass
+            else:
+                return self._coerce_data(data)
+
+        # 2. Try finding the json block by locating the opening brace containing required schema keys
+        key_idx = text.find('"hallucination_error"')
+        if key_idx != -1:
+            start_idx = text.rfind('{', 0, key_idx)
         else:
-            # 2. Find outermost { ... }
-            match = re.search(r"\{.*\}", text, re.DOTALL)
-            if not match:
-                return None
-            json_str = match.group(0)
-
-        # Repair trailing commas
-        json_str = re.sub(r",\s*([}\]])", r"\1", json_str)
-
-        try:
-            data = json.loads(json_str)
-        except json.JSONDecodeError as e:
-            logger.debug("[%s] JSONDecodeError: %s", self.judge_id, e)
+            start_idx = text.find('{')
+            
+        if start_idx == -1:
             return None
+            
+        # Walk backwards from the end of the text to find the matching '}' 
+        # that parses correctly. Handles cases where output ends with random { or }.
+        end_idx = len(text)
+        data = None
+        while True:
+            end_idx = text.rfind('}', start_idx, end_idx)
+            if end_idx == -1:
+                break
+                
+            json_str = text[start_idx:end_idx+1]
+            json_str = re.sub(r",\s*([}\]])", r"\1", json_str)
+            try:
+                data = json.loads(json_str)
+                break
+            except json.JSONDecodeError:
+                pass
 
+        if data is None:
+            logger.debug("[%s] Failed to parse JSON entirely.", self.judge_id)
+            return None
+            
+        return self._coerce_data(data)
+
+    def _coerce_data(self, data: dict) -> Optional[EvaluationMetrics]:
         # Coerce types that LLMs commonly get wrong
         for list_field in [
             "hallucination_steps",
