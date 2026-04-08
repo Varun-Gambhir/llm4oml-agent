@@ -192,6 +192,17 @@ class SingleJudge(BaseEvaluator):
                 data[list_field] = []
             elif isinstance(data[list_field], (int, float)):
                 data[list_field] = [int(data[list_field])]
+            elif isinstance(data[list_field], str):
+                val = data[list_field].strip().lower()
+                if val in ("none", "null", "[]", "set()", ""):
+                    data[list_field] = []
+                else:
+                    # attempt to extract integers from strings like "1, 2" or "[1, 2]"
+                    nums = re.findall(r'\d+', data[list_field])
+                    data[list_field] = [int(n) for n in nums]
+            elif not isinstance(data[list_field], list):
+                # Fallback for unexpected types
+                data[list_field] = []
 
         # Coerce booleans
         for bool_field in ["hallucination_error", "missing_step", "operator_error"]:
