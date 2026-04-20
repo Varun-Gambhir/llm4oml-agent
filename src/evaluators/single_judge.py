@@ -35,7 +35,7 @@ class SingleJudge(BaseEvaluator):
         judge_id: str,
         api_key: Optional[str] = None,
         temperature: float = 0.05,   # default override — evaluation must be near-0
-        max_tokens: int = 1500,
+        max_tokens: int = 8192,      # bumped to 8192 to prevent reasoning models from getting cut off
         timeout: int = 600,
         max_retries: int = 3,
         temp_config: TemperatureConfig = DEFAULT_TEMPERATURES,
@@ -133,6 +133,8 @@ class SingleJudge(BaseEvaluator):
         """Extract and validate JSON from LLM response text."""
         # Strip out <think> blocks if reasoning models still emitted them
         text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+        # Also strip unclosed <think> blocks in case max_tokens cut it off
+        text = re.sub(r"<think>.*$", "", text, flags=re.DOTALL)
         
         # 1. Try ```json ... ```
         match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)

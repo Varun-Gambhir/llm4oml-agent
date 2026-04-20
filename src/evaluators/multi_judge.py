@@ -38,7 +38,7 @@ class MultiJudgeEvaluator:
         judge_models: List[str],
         api_key: Optional[str] = None,
         temperature: float = 0.05,   # always near-zero for evaluation
-        max_tokens: int = 2000,
+        max_tokens: int = 8192,
         timeout: int = 600,
         max_retries: int = 3,
         outlier_threshold: float = 2.0,

@@ -52,6 +52,7 @@ class WorkflowNodes:
         # ── ABLATION PATCH ────────────────────────────────────────────────────
         crs_weights: Optional[Dict[str, float]] = None,
         per_judge_timeout: int = 600,
+        lean_project_dir: Optional[str] = None,
         # ─────────────────────────────────────────────────────────────────────
     ):
         self.temp_config = temp_config
@@ -90,6 +91,11 @@ class WorkflowNodes:
             )
 
         self.use_multi_judge = use_multi_judge
+
+        self.lean_probe = None
+        if lean_project_dir:
+            from ..formal.lean_probe import LeanProbe
+            self.lean_probe = LeanProbe(lean_project_dir, self.prover.llm)
 
         # ── ABLATION PATCH: inject weights into calculator ────────────────────
         _w = crs_weights or {}
@@ -141,9 +147,28 @@ class WorkflowNodes:
         feedback = state.get("feedback", "")
 
         if self.use_multi_judge:
-            return self._multi_judge_evaluation(proof, feedback, iteration, state)
+            result = self._multi_judge_evaluation(proof, feedback, iteration, state)
         else:
-            return self._single_judge_evaluation(proof, feedback, iteration, state)
+            result = self._single_judge_evaluation(proof, feedback, iteration, state)
+
+        if self.lean_probe is not None:
+            try:
+                lean_verdict = self.lean_probe.probe(
+                    latex_proof=proof,
+                    algorithm=state.get("algorithm_description", ""),
+                )
+                result["lean_verdict"] = {
+                    "status": lean_verdict.status,
+                    "errors": lean_verdict.errors,
+                    "elapsed_seconds": lean_verdict.elapsed_seconds,
+                }
+                # Append Lean feedback to the correction prompt
+                if lean_verdict.is_useful and lean_verdict.status == "fail":
+                    result["feedback"] += "\n\n" + lean_verdict.to_feedback_string()
+            except Exception as exc:
+                logger.warning("[LeanProbe] Failed silently: %s", exc)
+
+        return result
 
     # ------------------------------------------------------------------
     # Single-judge evaluation

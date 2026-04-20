@@ -33,6 +33,7 @@ def main():
 
     # Generation parameters
     parser.add_argument("--max-iter", type=int, default=3)
+    parser.add_argument("--lean", action="store_true", help="Enable Lean 4 formal verification probe")
     parser.add_argument("--timeout", type=int, default=90)
     parser.add_argument("--max-retries", type=int, default=3)
     parser.add_argument("--output", default="output")
@@ -65,6 +66,8 @@ def main():
         verification=args.temp_verification,
     )
 
+    lean_dir = str(Path(__file__).parent.parent / "lean") if args.lean else None
+
     workflow = ProofWorkflow(
         provider_name=args.provider,
         prover_model=args.model,
@@ -77,6 +80,7 @@ def main():
         output_dir=args.output,
         temp_config=temp_config,
         per_judge_timeout=600,
+        lean_project_dir=lean_dir,
     )
 
     print(f"\nProvider       : {args.provider}")
