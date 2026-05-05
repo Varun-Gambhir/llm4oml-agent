@@ -1,0 +1,183 @@
+{
+  "metadata": {
+    "start_time": "2026-05-05T05:12:06.788276",
+    "end_time": "2026-05-05T05:19:00.175974",
+    "status": "completed"
+  },
+  "configuration": {
+    "provider": "nvidia",
+    "prover_model": "openai/gpt-oss-120b",
+    "evaluator_models": [
+      "openai/gpt-oss-120b"
+    ],
+    "use_multi_judge": false,
+    "max_iterations": 3,
+    "temperature_config": {
+      "generation": 0.7,
+      "correction": 0.4,
+      "evaluation": 0.05,
+      "verification": 0.05
+    },
+    "timeout": 90,
+    "max_retries": 3,
+    "crs_weights": {}
+  },
+  "algorithm_description": "The algorithm iteratively updates the parameters by computing gradients on randomly sampled minibatches and taking a step in the negative gradient direction with a fixed step size.",
+  "assumptions": "Strongly convex and smooth functions",
+  "iterations": [
+    {
+      "iteration_number": 1,
+      "nodes": {
+        "prover": {
+          "timestamp": "2026-05-05T05:12:59.026288",
+          "node_name": "prover",
+          "proof_content": "\\documentclass{article}\n\\usepackage{amsmath,amssymb,amsthm}\n\\usepackage{algorithm}\n\\usepackage{algpseudocode}\n\\usepackage{hyperref}\n\\usepackage{enumitem}\n\\newtheorem{theorem}{Theorem}\n\\newtheorem{lemma}{Lemma}\n\\begin{document}\n\n\\section*{Algorithm Name}\nStochastic Gradient Descent with Fixed Step Size (SGD-FS)\n\n\\section*{Mathematical Formulation}\nLet $f:\\mathbb{R}^{d}\\rightarrow\\mathbb{R}$ be the population objective\n\\[\n    f(w)=\\mathbb{E}_{\\xi}[\\,\\ell(w;\\xi)\\,],\n\\]\nwhere $\\ell(w;\\xi)$ is the loss on a random data point $\\xi$.\nAt iteration $t$ we draw an independent minibatch $\\mathcal{B}_{t}$ of size $b$,\ncompute the stochastic gradient\n\\[\n    g_{t}\\;:=\\;\\frac{1}{b}\\sum_{\\xi\\in\\mathcal{B}_{t}}\\nabla\\ell(w_{t};\\xi),\n\\]\nand update the parameters by\n\\[\n    w_{t+1}=w_{t}-\\eta\\,g_{t},\\qquad t=0,1,2,\\dots\n\\]\nwhere $\\eta>0$ is a fixed step size.\n\n\\section*{Pseudocode}\n\\begin{algorithm}[H]\n\\caption{SGD with Fixed Step Size}\n\\begin{algorithmic}[1]\n\\State \\textbf{Input:} initial point $w_{0}\\in\\mathbb{R}^{d}$, step size $\\eta>0$, minibatch size $b$, max iterations $T$\n\\For{$t=0$ \\textbf{to} $T-1$}\n    \\State Sample a minibatch $\\mathcal{B}_{t}$ of size $b$ independently from the data distribution\n    \\State Compute stochastic gradient $g_{t}= \\frac{1}{b}\\sum_{\\xi\\in\\mathcal{B}_{t}}\\nabla\\ell(w_{t};\\xi)$\n    \\State Update $w_{t+1}= w_{t}-\\eta\\,g_{t}$\n\\EndFor\n\\State \\textbf{Output:} $w_{T}$\n\\end{algorithmic}\n\\end{algorithm}\n\n\\section*{Dry Run Example}\nConsider the scalar quadratic $f(w)=(w-3)^{2}$.\n\\begin{itemize}\n    \\item Gradient: $\\nabla f(w)=2(w-3)$.\n    \\item Initialise $w_{0}=0$, step size $\\eta=0.1$, and assume a minibatch of size $1$ so that $g_{t}=\\nabla f(w_{t})$ (no stochasticity).\n\\end{itemize}\n\\begin{center}\n\\begin{tabular}{c|c|c|c}\n$t$ & $w_{t}$ & $g_{t}=2(w_{t}-3)$ & $w_{t+1}=w_{t}-\\eta g_{t}$\\\\ \\hline\n0 & $0$ & $-6$ & $0-0.1(-6)=0.6$ \\\\\n1 & $0.6$ & $2(0.6-3)=-4.8$ & $0.6-0.1(-4.8)=1.08$ \\\\\n2 & $1.08$ & $2(1.08-3)=-3.84$ & $1.08-0.1(-3.84)=1.464$ \\\\\n\\end{tabular}\n\\end{center}\nCorresponding objective values $f(w_{t})$ are $9$, $5.76$, $3.696$ respectively, showing monotone decrease.\n\n\\section*{Assumptions}\n\\begin{enumerate}[label=\\textbf{A\\arabic*.}, leftmargin=*]\n    \\item \\textbf{Strong Convexity.} $f$ is $\\mu$\u2011strongly convex ($\\mu>0$):\n    \\[\n        f(v)\\ge f(w)+\\langle\\nabla f(w),v-w\\rangle+\\frac{\\mu}{2}\\|v-w\\|^{2},\n        \\quad\\forall w,v\\in\\mathbb{R}^{d}.\n    \\]\n    \\item \\textbf{Smoothness.} $f$ has $L$\u2011Lipschitz gradient ($L>0$):\n    \\[\n        \\|\\nabla f(v)-\\nabla f(w)\\|\\le L\\|v-w\\|,\n        \\quad\\forall w,v\\in\\mathbb{R}^{d}.\n    \\]\n    \\item \\textbf{Unbiased Stochastic Gradient.}\n    \\[\n        \\mathbb{E}[\\,g_{t}\\mid w_{t}\\,]=\\nabla f(w_{t}).\n    \\]\n    \\item \\textbf{Bounded Variance.} There exists $\\sigma^{2}\\ge0$ such that\n    \\[\n        \\mathbb{E}\\big[\\|g_{t}-\\nabla f(w_{t})\\|^{2}\\mid w_{t}\\big]\\le\\sigma^{2},\n        \\qquad\\forall t.\n    \\]\n    \\item \\textbf{Step Size.} The fixed step size satisfies\n    \\[\n        0<\\eta<\\frac{2}{\\mu+L}.\n    \\]\n\\end{enumerate}\n\n\\section*{Main Convergence Theorem}\n\\begin{theorem}\n\\label{thm:linear}\nUnder Assumptions A1\u2013A5, the iterates of SGD\u2011FS satisfy for all $t\\ge0$\n\\[\n\\mathbb{E}\\big[\\|w_{t}-w^{*}\\|^{2}\\big]\\le\n\\big(1-\\eta\\mu\\big)^{t}\\|w_{0}-w^{*}\\|^{2}\n\\;+\\;\n\\frac{\\eta\\sigma^{2}}{\\mu},\n\\tag{1}\n\\]\nwhere $w^{*}=\\arg\\min f(w)$.\nConsequently,\n\\[\n\\mathbb{E}\\big[f(w_{t})-f(w^{*})\\big]\\le\n\\frac{L}{2}\\big(1-\\eta\\mu\\big)^{t}\\|w_{0}-w^{*}\\|^{2}\n\\;+\\;\n\\frac{\\eta L\\sigma^{2}}{2\\mu}.\n\\tag{2}\n\\]\n\\end{theorem}\n\n\\section*{Theoretical Properties}\n\\begin{enumerate}[label=\\textbf{P\\arabic*.}, leftmargin=*]\n    \\item \\textbf{Linear (Geometric) Convergence.} The term $(1-\\eta\\mu)^{t}$ yields an exponential decay provided $\\eta\\mu\\in(0,1)$.\n    \\item \\textbf{Steady\u2011State Error.} The constant $\\frac{\\eta\\sigma^{2}}{\\mu}$ is the asymptotic variance\u2011induced error; smaller $\\eta$ reduces this bias at the cost of slower decay.\n    \\item \\textbf{Comparison to Deterministic GD.} When $\\sigma^{2}=0$ the bound reduces to the classic GD rate $\\|w_{t}-w^{*}\\|^{2}\\le (1-\\eta\\mu)^{t}\\|w_{0}-w^{*}\\|^{2}$.\n    \\item \\textbf{Hyperparameter Sensitivity.} The admissible interval for $\\eta$ is $(0,2/(\\mu+L))$; choosing $\\eta$ close to $1/L$ balances speed and variance amplification.\n\\end{enumerate}\n\n\\section*{Discussion}\nThe theorem shows that even with stochastic minibatch gradients, a constant step size yields a linear convergence to a neighbourhood of the optimum whose radius scales linearly with $\\eta$ and the gradient noise level $\\sigma^{2}$. This mirrors classical results for strongly convex stochastic optimization and quantifies precisely how step\u2011size selection trades off speed versus accuracy.\n\n\\section*{Preliminaries (Definitions and Lemmas)}\n\\begin{lemma}[Quadratic Bounds]\\label{lem:quad}\nFor a $\\mu$\u2011strongly convex and $L$\u2011smooth function $f$,\n\\[\n    2\\mu\\big(f(w)-f(w^{*})\\big)\\le\\|\\nabla f(w)\\|^{2}\\le 2L\\big(f(w)-f(w^{*})\\big),\n    \\qquad\\forall w.\n\\tag{L1}\n\\]\n\\end{lemma}\n\\begin{proof}\nThe left inequality follows from strong convexity and the right from smoothness; see standard convex analysis. \\qedhere\n\\end{proof}\n\n\\begin{lemma}[One\u2011step Recursion]\\label{lem:rec}\nFor any $w\\in\\mathbb{R}^{d}$ and any stochastic gradient $g$ with $\\mathbb{E}[g]=\\nabla f(w)$,\n\\[\n\\mathbb{E}\\big[\\|w-\\eta g-w^{*}\\|^{2}\\big]\n=\n\\|w-w^{*}\\|^{2}\n-2\\eta\\langle\\nabla f(w),w-w^{*}\\rangle\n+\\eta^{2}\\big(\\|\\nabla f(w)\\|^{2}+\\mathbb{E}\\|g-\\nabla f(w)\\|^{2}\\big).\n\\tag{L2}\n\\]\n\\end{lemma}\n\\begin{proof}\nExpand the squared norm, take conditional expectation and use unbiasedness. \\qedhere\n\\end{proof}\n\n\\section*{Main Proof (Step\u2011by\u2011Step Derivation)}\nWe prove Theorem~\\ref{thm:linear} by induction on $t$.\n\n\\noindent\\textbf{Step 1.} Start from the update rule $w_{t+1}=w_{t}-\\eta g_{t}$ and apply Lemma~\\ref{lem:rec} conditioned on $w_{t}$:\n\\begin{align}\n\\mathbb{E}\\big[\\|w_{t+1}-w^{*}\\|^{2}\\mid w_{t}\\big]\n&=\n\\|w_{t}-w^{*}\\|^{2}\n-2\\eta\\langle\\nabla f(w_{t}),w_{t}-w^{*}\\rangle\n+\\eta^{2}\\Big(\\|\\nabla f(w_{t})\\|^{2}+\\mathbb{E}\\big[\\|g_{t}-\\nabla f(w_{t})\\|^{2}\\mid w_{t}\\big]\\Big).\\nonumber\\\\\n&\\stackrel{\\text{[Step 1]}}{=}\n\\|w_{t}-w^{*}\\|^{2}\n-2\\eta\\langle\\nabla f(w_{t}),w_{t}-w^{*}\\rangle\n+\\eta^{2}\\|\\nabla f(w_{t})\\|^{2}\n+\\eta^{2}\\mathbb{E}\\big[\\|g_{t}-\\nabla f(w_{t})\\|^{2}\\mid w_{t}\\big].\n\\tag{3}\n\\end{align}\n\n\\noindent\\textbf{Step 2.} Use strong convexity (A1) to lower\u2011bound the inner product:\n\\[\n\\langle\\nabla f(w_{t}),w_{t}-w^{*}\\rangle\\ge\nf(w_{t})-f(w^{*})+\\frac{\\mu}{2}\\|w_{t}-w^{*}\\|^{2}.\n\\tag{4}\n\\]\nInsert (4) into (3):\n\\begin{align}\n\\mathbb{E}\\big[\\|w_{t+1}-w^{*}\\|^{2}\\mid w_{t}\\big]\n&\\le\n\\|w_{t}-w^{*}\\|^{2}\n-2\\eta\\Big(f(w_{t})-f(w^{*})\\Big)\n-\\eta\\mu\\|w_{t}-w^{*}\\|^{2}\n+\\eta^{2}\\|\\nabla f(w_{t})\\|^{2}\n+\\eta^{2}\\sigma^{2},\n\\tag{5}\n\\end{align}\nwhere we used the variance bound (A4) in the last term.\n\n\\noindent\\textbf{Step 3.} Apply the smoothness inequality (Lemma~\\ref{lem:quad}, right side) to replace $\\|\\nabla f(w_{t})\\|^{2}$:\n\\[\n\\|\\nabla f(w_{t})\\|^{2}\\le 2L\\big(f(w_{t})-f(w^{*})\\big).\n\\tag{6}\n\\]\nPlug (6) into (5):\n\\begin{align}\n\\mathbb{E}\\big[\\|w_{t+1}-w^{*}\\|^{2}\\mid w_{t}\\big]\n&\\le\n\\big(1-\\eta\\mu\\big)\\|w_{t}-w^{*}\\|^{2}\n-2\\eta\\big(1-\\eta L\\big)\\big(f(w_{t})-f(w^{*})\\big)\n+\\eta^{2}\\sigma^{2}.\n\\tag{7}\n\\end{align}\n\n\\noindent\\textbf{Step 4.} By the step\u2011size condition $\\eta<2/(\\mu+L)$ we have $0<\\eta L<1$, thus $1-\\eta L>0$.\nDiscard the non\u2011negative term $-2\\eta(1-\\eta L)(f(w_{t})-f(w^{*}))$ to obtain a simpler recursion:\n\\begin{align}\n\\mathbb{E}\\big[\\|w_{t+1}-w^{*}\\|^{2}\\mid w_{t}\\big]\n\\le\n\\big(1-\\eta\\mu\\big)\\|w_{t}-w^{*}\\|^{2}\n+\\eta^{2}\\sigma^{2}.\n\\tag{8}\n\\end{align}\n\n\\noindent\\textbf{Step 5.} Take total expectation on both sides of (8):\n\\begin{align}\n\\mathbb{E}\\big[\\|w_{t+1}-w^{*}\\|^{2}\\big]\n\\le\n\\big(1-\\eta\\mu\\big)\\mathbb{E}\\big[\\|w_{t}-w^{*}\\|^{2}\\big]\n+\\eta^{2}\\sigma^{2}.\n\\tag{9}\n\\end{align}\nDefine $a_{t}:=\\mathbb{E}\\big[\\|w_{t}-w^{*}\\|^{2}\\big]$.\nThen (9) is a linear difference inequality:\n\\[\na_{t+1}\\le (1-\\eta\\mu)a_{t}+\\eta^{2}\\sigma^{2}.\n\\tag{10}\n\\]\n\n\\noindent\\textbf{Step 6.} Solve recursion (10) by unrolling:\n\\begin{align}\na_{t}\n&\\le (1-\\eta\\mu)^{t}a_{0}\n+\\eta^{2}\\sigma^{2}\\sum_{k=0}^{t-1}(1-\\eta\\mu)^{k}\\nonumber\\\\\n&= (1-\\eta\\mu)^{t}\\|w_{0}-w^{*}\\|^{2}\n+\\eta^{2}\\sigma^{2}\\frac{1-(1-\\eta\\mu)^{t}}{\\eta\\mu}\\nonumber\\\\\n&\\le (1-\\eta\\mu)^{t}\\|w_{0}-w^{*}\\|^{2}\n+\\frac{\\eta\\sigma^{2}}{\\mu}.\n\\tag{11}\n\\end{align}\nEquation (11) is exactly the bound (1) of Theorem~\\ref{thm:linear}. \\hfill $\\square$\n\n\\section*{Rate Derivation (With Constants)}\nFrom Lemma~\\ref{lem:quad} (left side) we have\n\\[\nf(w_{t})-f(w^{*})\\le\\frac{1}{2\\mu}\\|\\nabla f(w_{t})\\|^{2}.\n\\tag{12}\n\\]\nApplying smoothness again,\n\\[\n\\|\\nabla f(w_{t})\\|^{2}\\le L^{2}\\|w_{t}-w^{*}\\|^{2}.\n\\tag{13}\n\\]\nTaking expectations and using bound (1):\n\\[\n\\mathbb{E}[f(w_{t})-f(w^{*})]\n\\le\\frac{L^{2}}{2\\mu}\n\\Big((1-\\eta\\mu)^{t}\\|w_{0}-w^{*}\\|^{2}\n+\\frac{\\eta\\sigma^{2}}{\\mu}\\Big)\n=\n\\frac{L}{2}(1-\\eta\\mu)^{t}\\|w_{0}-w^{*}\\|^{2}\n+\\frac{\\eta L\\sigma^{2}}{2\\mu},\n\\]\nwhich is precisely (2).\n\n\\section*{Special Cases}\n\\begin{itemize}\n    \\item \\textbf{Zero variance ($\\sigma^{2}=0$).} The bound reduces to\n    $\\mathbb{E}\\|w_{t}-w^{*}\\|^{2}\\le(1-\\eta\\mu)^{t}\\|w_{0}-w^{*}\\|^{2}$,\n    i.e., deterministic gradient descent with linear convergence.\n    \\item \\textbf{Vanishing step size.} Let $\\eta\\downarrow0$ while keeping $\\eta\\mu$ fixed; the steady\u2011state error $\\frac{\\eta\\sigma^{2}}{\\mu}$ can be made arbitrarily small at the cost of slower decay.\n    \\item \\textbf{Optimal constant step size.} Minimising the RHS of (1) w.r.t. $\\eta$ yields $\\eta^{\\star}= \\min\\big\\{\\frac{1}{L},\\frac{2}{\\mu+L}\\big\\}$, which recovers the classical optimal step size for strongly convex SGD.\n\\end{itemize}\n\n\\end{document}",
+          "proof_length": 9692,
+          "previous_proof_length": 0,
+          "iteration": 1
+        },
+        "evaluator": {
+          "timestamp": "2026-05-05T05:15:43.244748",
+          "node_name": "evaluator",
+          "feedback": "The proof correctly states a linear (geometric) convergence rate with a steady\u2011state error term, and it uses the standard assumptions A1\u2013A5. However, several logical and technical gaps undermine the rigor:\n- **[Step 4]**: The step\u2011size condition A5 (\u03b7 < 2/(\u03bc+L)) is used to claim 0 < \u03b7L < 1 and therefore that the term -2\u03b7(1-\u03b7L)(f(w_t)-f(w*)) is non\u2011negative and can be dropped. This implication is false; \u03b7 < 2/(\u03bc+L) does not guarantee \u03b7L < 1. The term may be positive, so discarding it is unjustified.\n- **[Step 6]**: The recursion a_{t+1} \u2264 (1-\u03b7\u03bc)a_t + \u03b7^2\u03c3^2 is solved using a geometric series assuming 0 < 1-\u03b7\u03bc < 1 (i.e., \u03b7\u03bc < 1). This condition is never derived from the assumptions; the proof should explicitly require \u03b7\u03bc \u2208 (0,1). Without it the series formula and the bound (11) are invalid.\n- **[Step 12\u201113] (Rate Derivation)**: The derivation of the function\u2011value bound (2) first uses Lemma\u202fL1 left side (2\u03bc(f-f*) \u2264 \u2016\u2207f\u2016^2) and then the Lipschitz gradient inequality \u2016\u2207f\u2016 \u2264 L\u2016w-w*\u2016. Combining them yields f(w_t)-f(w*) \u2264 (L^2/(2\u03bc))\u2016w_t-w*\u2016^2, not the claimed (L/2)\u2016w_t-w*\u2016^2. The final expression (2) is correct for L\u2011smooth convex functions, but the justification is wrong. A direct use of the smoothness inequality f(w)-f(w*) \u2264 (L/2)\u2016w-w*\u2016^2 would be appropriate.\n- **Assumption usage**: A1, A2, A3, A4 are employed correctly up to Step\u202f3. A5 is misapplied in Step\u202f4 as described above.\n- **Missing justification**: The proof does not explain why \u03b7\u03bc < 1 follows from the given assumptions, nor does it discuss the necessity of \u03b7 \u2264 1/L for the positivity of 1-\u03b7L. These gaps constitute missing steps.\n- **Overall**: The structure (update \u2192 Lemma\u202frec \u2192 strong convexity \u2192 smoothness \u2192 recursion \u2192 solution) is sound, but the above issues must be fixed for the proof to be rigorous and complete.\n\n**Recommendations**:\n1. Replace the step\u2011size condition with \u03b7 \u2264 min{1/L, 1/\u03bc} (or explicitly require \u03b7\u03bc < 1) to guarantee 0 < \u03b7L < 1 and 0 < 1-\u03b7\u03bc < 1.\n2. Retain the term -2\u03b7(1-\u03b7L)(f-f*) in the recursion or bound it appropriately rather than discarding it.\n3. In the rate derivation, use the standard smoothness bound f(w)-f(w*) \u2264 (L/2)\u2016w-w*\u2016^2 directly, or adjust the constants accordingly.\n4. Add a brief justification for the geometric\u2011series solution of the recursion under the clarified step\u2011size condition.\n\nAfter these corrections the proof would meet the standards for a publication\u2011ready convergence analysis.",
+          "verdict": "CONDITIONAL",
+          "metrics": {
+            "HA": false,
+            "MS": true,
+            "OP": true,
+            "completeness_score": 3,
+            "assumption_use_score": 3
+          },
+          "error_set": {
+            "hallucinations": [],
+            "missing_steps": [
+              13,
+              4,
+              12,
+              6
+            ],
+            "operator_errors": [
+              13,
+              4,
+              12,
+              6
+            ],
+            "assumption_violations": [
+              4
+            ]
+          },
+          "flagged_steps": [
+            13,
+            4,
+            12,
+            6
+          ],
+          "correction_metrics": {
+            "error_resolution_rate": 0.0,
+            "regression_penalty": 0.0,
+            "targeted_fix_precision": 1.0,
+            "correction_reasoning_score": 0.36,
+            "crs_raw": 0.36,
+            "errors_fixed": 0,
+            "errors_introduced": 4,
+            "flagged_fixed": 0,
+            "total_flagged": 4,
+            "is_mixed_transition": false,
+            "prev_error_count": 0,
+            "curr_error_count": 4
+          },
+          "judge_evaluations": [],
+          "judge_reliability": []
+        }
+      },
+      "summary": {
+        "verdict": "CONDITIONAL",
+        "completeness_score": 3,
+        "has_errors": true,
+        "crs": 0.36
+      }
+    },
+    {
+      "iteration_number": 2,
+      "nodes": {
+        "prover": {
+          "timestamp": "2026-05-05T05:16:17.509850",
+          "node_name": "prover",
+          "proof_content": "% CORRECTED VERSION\n% Changes:\n% - Replaced the step\u2011size condition (A5) with a stricter bound guaranteeing 0<\u03b7L\u22641 and \u03b7\u03bc<1.\n% - Added justification that the discarded term in Step\u202f4 is non\u2011positive (requires \u03b7\u22641/L).\n% - Explicitly required \u03b7\u03bc<1 before solving the recursion (Step\u202f6).\n% - Fixed the function\u2011value rate derivation by using the standard smoothness bound\n%   f(w)-f* \u2264 (L/2)||w-w*||^2 (replaced incorrect Lemma\u202fL1 usage).\n% - Inserted brief explanations where assumptions are invoked.\n\n\\documentclass{article}\n\\usepackage{amsmath,amssymb,amsthm}\n\\usepackage{algorithm}\n\\usepackage{algpseudocode}\n\\usepackage{hyperref}\n\\usepackage{enumitem}\n\\newtheorem{theorem}{Theorem}\n\\newtheorem{lemma}{Lemma}\n\\begin{document}\n\n\\section*{Algorithm Name}\nStochastic Gradient Descent with Fixed Step Size (SGD-FS)\n\n\\section*{Mathematical Formulation}\nLet $f:\\mathbb{R}^{d}\\rightarrow\\mathbb{R}$ be the population objective\n\\[\n    f(w)=\\mathbb{E}_{\\xi}[\\,\\ell(w;\\xi)\\,],\n\\]\nwhere $\\ell(w;\\xi)$ is the loss on a random data point $\\xi$.\nAt iteration $t$ we draw an independent minibatch $\\mathcal{B}_{t}$ of size $b$,\ncompute the stochastic gradient\n\\[\n    g_{t}\\;:=\\;\\frac{1}{b}\\sum_{\\xi\\in\\mathcal{B}_{t}}\\nabla\\ell(w_{t};\\xi),\n\\]\nand update the parameters by\n\\[\n    w_{t+1}=w_{t}-\\eta\\,g_{t},\\qquad t=0,1,2,\\dots\n\\]\nwhere $\\eta>0$ is a fixed step size.\n\n\\section*{Pseudocode}\n\\begin{algorithm}[H]\n\\caption{SGD with Fixed Step Size}\n\\begin{algorithmic}[1]\n\\State \\textbf{Input:} initial point $w_{0}\\in\\mathbb{R}^{d}$, step size $\\eta>0$, minibatch size $b$, max iterations $T$\n\\For{$t=0$ \\textbf{to} $T-1$}\n    \\State Sample a minibatch $\\mathcal{B}_{t}$ of size $b$ independently from the data distribution\n    \\State Compute stochastic gradient $g_{t}= \\frac{1}{b}\\sum_{\\xi\\in\\mathcal{B}_{t}}\\nabla\\ell(w_{t};\\xi)$\n    \\State Update $w_{t+1}= w_{t}-\\eta\\,g_{t}$\n\\EndFor\n\\State \\textbf{Output:} $w_{T}$\n\\end{algorithmic}\n\\end{algorithm}\n\n\\section*{Dry Run Example}\nConsider the scalar quadratic $f(w)=(w-3)^{2}$.\n\\begin{itemize}\n    \\item Gradient: $\\nabla f(w)=2(w-3)$.\n    \\item Initialise $w_{0}=0$, step size $\\eta=0.1$, and assume a minibatch of size $1$ so that $g_{t}=\\nabla f(w_{t})$ (no stochasticity).\n\\end{itemize}\n\\begin{center}\n\\begin{tabular}{c|c|c|c}\n$t$ & $w_{t}$ & $g_{t}=2(w_{t}-3)$ & $w_{t+1}=w_{t}-\\eta g_{t}$\\\\ \\hline\n0 & $0$ & $-6$ & $0-0.1(-6)=0.6$ \\\\\n1 & $0.6$ & $2(0.6-3)=-4.8$ & $0.6-0.1(-4.8)=1.08$ \\\\\n2 & $1.08$ & $2(1.08-3)=-3.84$ & $1.08-0.1(-3.84)=1.464$ \\\\\n\\end{tabular}\n\\end{center}\nCorresponding objective values $f(w_{t})$ are $9$, $5.76$, $3.696$ respectively, showing monotone decrease.\n\n\\section*{Assumptions}\n\\begin{enumerate}[label=\\textbf{A\\arabic*.}, leftmargin=*]\n    \\item \\textbf{Strong Convexity.} $f$ is $\\mu$\u2011strongly convex ($\\mu>0$):\n    \\[\n        f(v)\\ge f(w)+\\langle\\nabla f(w),v-w\\rangle+\\frac{\\mu}{2}\\|v-w\\|^{2},\n        \\quad\\forall w,v\\in\\mathbb{R}^{d}.\n    \\]\n    \\item \\textbf{Smoothness.} $f$ has $L$\u2011Lipschitz gradient ($L>0$):\n    \\[\n        \\|\\nabla f(v)-\\nabla f(w)\\|\\le L\\|v-w\\|,\n        \\quad\\forall w,v\\in\\mathbb{R}^{d}.\n    \\]\n    \\item \\textbf{Unbiased Stochastic Gradient.}\n    \\[\n        \\mathbb{E}[\\,g_{t}\\mid w_{t}\\,]=\\nabla f(w_{t}).\n    \\]\n    \\item \\textbf{Bounded Variance.} There exists $\\sigma^{2}\\ge0$ such that\n    \\[\n        \\mathbb{E}\\big[\\|g_{t}-\\nabla f(w_{t})\\|^{2}\\mid w_{t}\\big]\\le\\sigma^{2},\n        \\qquad\\forall t.\n    \\]\n    % CORRECTED: tighten the step\u2011size condition so that both 0<\u03b7L\u22641 and \u03b7\u03bc<1 hold.\n    \\item \\textbf{Step Size.} The fixed step size satisfies\n    \\[\n        0<\\eta<\\min\\Bigl\\{\\frac{1}{L},\\;\\frac{1}{\\mu}\\Bigr\\}.\n    \\tag{A5}\n    \\]\n    % ADDED: this guarantees $0<\\eta L\\le 1$ and $0<\\eta\\mu<1$, which are needed in the subsequent steps.\n\\end{enumerate}\n\n\\section*{Main Convergence Theorem}\n\\begin{theorem}\n\\label{thm:linear}\nUnder Assumptions A1\u2013A5, the iterates of SGD\u2011FS satisfy for all $t\\ge0$\n\\[\n\\mathbb{E}\\big[\\|w_{t}-w^{*}\\|^{2}\\big]\\le\n\\big(1-\\eta\\mu\\big)^{t}\\|w_{0}-w^{*}\\|^{2}\n\\;+\\;\n\\frac{\\eta\\sigma^{2}}{\\mu},\n\\tag{1}\n\\]\nwhere $w^{*}=\\arg\\min f(w)$.\nConsequently,\n\\[\n\\mathbb{E}\\big[f(w_{t})-f(w^{*})\\big]\\le\n\\frac{L}{2}\\big(1-\\eta\\mu\\big)^{t}\\|w_{0}-w^{*}\\|^{2}\n\\;+\\;\n\\frac{\\eta L\\sigma^{2}}{2\\mu}.\n\\tag{2}\n\\]\n\\end{theorem}\n\n\\section*{Theoretical Properties}\n\\begin{enumerate}[label=\\textbf{P\\arabic*.}, leftmargin=*]\n    \\item \\textbf{Linear (Geometric) Convergence.} The term $(1-\\eta\\mu)^{t}$ yields an exponential decay because $0<\\eta\\mu<1$ by (A5).\n    \\item \\textbf{Steady\u2011State Error.} The constant $\\frac{\\eta\\sigma^{2}}{\\mu}$ is the asymptotic variance\u2011induced error; smaller $\\eta$ reduces this bias at the cost of slower decay.\n    \\item \\textbf{Comparison to Deterministic GD.} When $\\sigma^{2}=0$ the bound reduces to the classic GD rate $\\|w_{t}-w^{*}\\|^{2}\\le (1-\\eta\\mu)^{t}\\|w_{0}-w^{*}\\|^{2}$.\n    \\item \\textbf{Hyperparameter Sensitivity.} The admissible interval for $\\eta$ is $(0,\\min\\{1/L,1/\\mu\\})$; choosing $\\eta$ close to $1/L$ balances speed and variance amplification.\n\\end{enumerate}\n\n\\section*{Discussion}\nThe theorem shows that even with stochastic minibatch gradients, a constant step size yields a linear convergence to a neighbourhood of the optimum whose radius scales linearly with $\\eta$ and the gradient noise level $\\sigma^{2}$. This mirrors classical results for strongly convex stochastic optimization and quantifies precisely how step\u2011size selection trades off speed versus accuracy.\n\n\\section*{Preliminaries (Definitions and Lemmas)}\n\\begin{lemma}[Quadratic Bounds]\\label{lem:quad}\nFor a $\\mu$\u2011strongly convex and $L$\u2011smooth function $f$,\n\\[\n    2\\mu\\big(f(w)-f(w^{*})\\big)\\le\\|\\nabla f(w)\\|^{2}\\le 2L\\big(f(w)-f(w^{*})\\big),\n    \\qquad\\forall w.\n\\tag{L1}\n\\]\n\\end{lemma}\n\\begin{proof}\nThe left inequality follows from strong convexity and the right from smoothness; see standard convex analysis. \\qedhere\n\\end{proof}\n\n\\begin{lemma}[One\u2011step Recursion]\\label{lem:rec}\nFor any $w\\in\\mathbb{R}^{d}$ and any stochastic gradient $g$ with $\\mathbb{E}[g]=\\nabla f(w)$,\n\\[\n\\mathbb{E}\\big[\\|w-\\eta g-w^{*}\\|^{2}\\big]\n=\n\\|w-w^{*}\\|^{2}\n-2\\eta\\langle\\nabla f(w),w-w^{*}\\rangle\n+\\eta^{2}\\big(\\|\\nabla f(w)\\|^{2}+\\mathbb{E}\\|g-\\nabla f(w)\\|^{2}\\big).\n\\tag{L2}\n\\]\n\\end{lemma}\n\\begin{proof}\nExpand the squared norm, take conditional expectation and use unbiasedness. \\qedhere\n\\end{proof}\n\n\\section*{Main Proof (Step\u2011by\u2011Step Derivation)}\nWe prove Theorem~\\ref{thm:linear} by induction on $t$.\n\n\\noindent\\textbf{Step 1.} Start from the update rule $w_{t+1}=w_{t}-\\eta g_{t}$ and apply Lemma~\\ref{lem:rec} conditioned on $w_{t}$:\n\\begin{align}\n\\mathbb{E}\\big[\\|w_{t+1}-w^{*}\\|^{2}\\mid w_{t}\\big]\n&=\n\\|w_{t}-w^{*}\\|^{2}\n-2\\eta\\langle\\nabla f(w_{t}),w_{t}-w^{*}\\rangle\n+\\eta^{2}\\Big(\\|\\nabla f(w_{t})\\|^{2}\n+\\mathbb{E}\\big[\\|g_{t}-\\nabla f(w_{t})\\|^{2}\\mid w_{t}\\big]\\Big) \\nonumber\\\\\n&\\stackrel{\\text{[Step 1]}}{=}\n\\|w_{t}-w^{*}\\|^{2}\n-2\\eta\\langle\\nabla f(w_{t}),w_{t}-w^{*}\\rangle\n+\\eta^{2}\\|\\nabla f(w_{t})\\|^{2}\n+\\eta^{2}\\mathbb{E}\\big[\\|g_{t}-\\nabla f(w_{t})\\|^{2}\\mid w_{t}\\big].\n\\tag{3}\n\\end{align}\n\n\\noindent\\textbf{Step 2.} Use strong convexity (A1) to lower\u2011bound the inner product:\n\\[\n\\langle\\nabla f(w_{t}),w_{t}-w^{*}\\rangle\\ge\nf(w_{t})-f(w^{*})+\\frac{\\mu}{2}\\|w_{t}-w^{*}\\|^{2}.\n\\tag{4}\n\\]\nInsert (4) into (3) and invoke the variance bound (A4):\n\\begin{align}\n\\mathbb{E}\\big[\\|w_{t+1}-w^{*}\\|^{2}\\mid w_{t}\\big]\n&\\le\n\\|w_{t}-w^{*}\\|^{2}\n-2\\eta\\big(f(w_{t})-f(w^{*})\\big)\n-\\eta\\mu\\|w_{t}-w^{*}\\|^{2}\n+\\eta^{2}\\|\\nabla f(w_{t})\\|^{2}\n+\\eta^{2}\\sigma^{2}.\n\\tag{5}\n\\end{align}\n\n\\noindent\\textbf{Step 3.} Apply the smoothness inequality (right side of Lemma~\\ref{lem:quad}) to replace $\\|\\nabla f(w_{t})\\|^{2}$:\n\\[\n\\|\\nabla f(w_{t})\\|^{2}\\le 2L\\big(f(w_{t})-f(w^{*})\\big).\n\\tag{6}\n\\]\nPlug (6) into (5):\n\\begin{align}\n\\mathbb{E}\\big[\\|w_{t+1}-w^{*}\\|^{2}\\mid w_{t}\\big]\n&\\le\n\\big(1-\\eta\\mu\\big)\\|w_{t}-w^{*}\\|^{2}\n-2\\eta\\big(1-\\eta L\\big)\\big(f(w_{t})-f(w^{*})\\big)\n+\\eta^{2}\\sigma^{2}.\n\\tag{7}\n\\end{align}\n\n\\noindent\\textbf{Step 4.} % CORRECTED: justify discarding the second term.\nBecause of the step\u2011size restriction (A5) we have $0<\\eta L\\le 1$, hence $1-\\eta L\\ge 0$. Since $f(w_{t})-f(w^{*})\\ge0$, the term $-2\\eta(1-\\eta L)(f(w_{t})-f(w^{*}))$ is \\emph{non\u2011positive}. Dropping a non\u2011positive term yields a valid (looser) upper bound:\n\\begin{align}\n\\mathbb{E}\\big[\\|w_{t+1}-w^{*}\\|^{2}\\mid w_{t}\\big]\n\\le\n\\big(1-\\eta\\mu\\big)\\|w_{t}-w^{*}\\|^{2}\n+\\eta^{2}\\sigma^{2}.\n\\tag{8}\n\\end{align}\n\n\\noindent\\textbf{Step 5.} Take total expectation on both sides of (8):\n\\begin{align}\n\\mathbb{E}\\big[\\|w_{t+1}-w^{*}\\|^{2}\\big]\n\\le\n\\big(1-\\eta\\mu\\big)\\mathbb{E}\\big[\\|w_{t}-w^{*}\\|^{2}\\big]\n+\\eta^{2}\\sigma^{2}.\n\\tag{9}\n\\end{align}\nDefine $a_{t}:=\\mathbb{E}\\big[\\|w_{t}-w^{*}\\|^{2}\\big]$. Then (9) becomes\n\\[\na_{t+1}\\le (1-\\eta\\mu)a_{t}+\\eta^{2}\\sigma^{2}.\n\\tag{10}\n\\]\n\n\\noindent\\textbf{Step 6.} % ADDED: ensure the geometric series is well\u2011defined.\nFrom (A5) we have $0<\\eta\\mu<1$, therefore $0<1-\\eta\\mu<1$. Unrolling the linear recursion (10) gives\n\\begin{align}\na_{t}\n&\\le (1-\\eta\\mu)^{t}a_{0}\n+\\eta^{2}\\sigma^{2}\\sum_{k=0}^{t-1}(1-\\eta\\mu)^{k} \\nonumber\\\\\n&= (1-\\eta\\mu)^{t}\\|w_{0}-w^{*}\\|^{2}\n+\\eta^{2}\\sigma^{2}\\,\\frac{1-(1-\\eta\\mu)^{t}}{\\eta\\mu} \\nonumber\\\\\n&\\le (1-\\eta\\mu)^{t}\\|w_{0}-w^{*}\\|^{2}\n+\\frac{\\eta\\sigma^{2}}{\\mu}.\n\\tag{11}\n\\end{align}\nEquation (11) is exactly the bound (1) of Theorem~\\ref{thm:linear}. \\hfill $\\square$\n\n\\section*{Rate Derivation (With Correct Constants)}\nFor an $L$\u2011smooth convex function we have the standard inequality\n\\[\nf(w)-f(w^{*})\\le \\frac{L}{2}\\,\\|w-w^{*}\\|^{2},\n\\qquad\\forall w.\n\\tag{12}\n\\]\nTaking expectations and using bound (1):\n\\begin{align}\n\\mathbb{E}\\big[f(w_{t})-f(w^{*})\\big]\n&\\le \\frac{L}{2}\\,\\mathbb{E}\\big[\\|w_{t}-w^{*}\\|^{2}\\big] \\nonumber\\\\\n&\\le \\frac{L}{2}\\Bigl((1-\\eta\\mu)^{t}\\|w_{0}-w^{*}\\|^{2}\n+\\frac{\\eta\\sigma^{2}}{\\mu}\\Bigr) \\nonumber\\\\\n&= \\frac{L}{2}(1-\\eta\\mu)^{t}\\|w_{0}-w^{*}\\|^{2}\n+\\frac{\\eta L\\sigma^{2}}{2\\mu},\n\\end{align}\nwhich is precisely (2).\n\n\\section*{Special Cases}\n\\begin{itemize}\n    \\item \\textbf{Zero variance ($\\sigma^{2}=0$).} The bound reduces to\n    $\\mathbb{E}\\|w_{t}-w^{*}\\|^{2}\\le(1-\\eta\\mu)^{t}\\|w_{0}-w^{*}\\|^{2}$,\n    i.e., deterministic gradient descent with linear convergence.\n    \\item \\textbf{Vanishing step size.} Let $\\eta\\downarrow0$ while keeping $\\eta\\mu$ fixed; the steady\u2011state error $\\frac{\\eta\\sigma^{2}}{\\mu}$ can be made arbitrarily small at the cost of slower decay.\n    \\item \\textbf{Optimal constant step size.} Minimising the RHS of (1) w.r.t. $\\eta$ under (A5) yields $\\eta^{\\star}=1/L$, which recovers the classical optimal step size for strongly convex SGD.\n\\end{itemize}\n\n\\end{document}\n% ===== CORRECTION SUMMARY =====\n% 1. [Step 4] Issue: the original step\u2011size condition did not guarantee \u03b7L\u22641, so the sign of the term was unclear.\n%    Fix: Replaced A5 with \u03b7<min{1/L,1/\u03bc} and added a justification that the discarded term is non\u2011positive.\n% 2. [Step 6] Issue: geometric\u2011series solution required \u03b7\u03bc<1, which was not derived.\n%    Fix: Explicitly required \u03b7\u03bc<1 via the new A5 and added a brief explanation before unrolling the recursion.\n% 3. [Rate Derivation] Issue: incorrect combination of Lemma\u202fL1 and Lipschitz bound leading to a wrong constant.\n%    Fix: Replaced the derivation with the standard smoothness inequality (12), yielding the correct constant (L/2).\n% 4. General: Added comments indicating where corrections were made and ensured all assumptions are used correctly.",
+          "proof_length": 11454,
+          "previous_proof_length": 9692,
+          "iteration": 2
+        },
+        "evaluator": {
+          "timestamp": "2026-05-05T05:19:00.175227",
+          "node_name": "evaluator",
+          "feedback": "Issue\u2011by\u2011issue assessment:\n- [Step 4] Original problem: step\u2011size condition did not guarantee \u03b7L\u22641, so discarding the term was unjustified. V2 replaces A5 with \u03b7<min{1/L,1/\u03bc} and explicitly shows 0<\u03b7L<1, making the term non\u2011positive. **FIXED**.\n- [Step 6] Original problem: recursion solution required \u03b7\u03bc<1, which was never derived. V2 adds \u03b7<1/\u03bc in A5 and states 0<\u03b7\u03bc<1 before unrolling the recursion. **FIXED**.\n- [Rate Derivation] Original problem: incorrect combination of Lemma\u202fL1 and Lipschitz bound gave the wrong constant. V2 uses the standard smoothness inequality f(w)-f* \u2264 (L/2)||w-w*||^2, yielding the correct constant. **FIXED**.\n- Assumption usage: All assumptions A1\u2013A5 are now invoked correctly in the main proof. **FIXED**.\n- Missing justification: V2 adds explanations for discarding the second term and for the geometric\u2011series bound. **FIXED**.\n\nNew issues introduced in V2:\n1. In the *Special Cases* section the claim \"Optimal constant step size. Minimising the RHS of (1) \u2026 yields \u03b7* = 1/L\" is unsupported; the bound (1) is not minimized at \u03b7=1/L under the constraint \u03b7<1/L, and the derivation is missing. This is a **hallucinated result**.\n2. The bullet \"Vanishing step size. Let \u03b7\u21930 while keeping \u03b7\u03bc fixed\" is contradictory (if \u03b7\u21920 then \u03b7\u03bc\u21920, not fixed). This is another **logical inconsistency**.\n3. The same bullet also incorrectly suggests the steady\u2011state error can be made arbitrarily small while keeping \u03b7\u03bc fixed, which does not follow from the bound.\nThese problems do not affect the core convergence theorem but indicate a lapse in the auxiliary discussion.\n\nOverall, V2 successfully repairs the original gaps, but the discussion section contains hallucinated/incorrect statements that need correction.",
+          "verdict": "PASS_MINOR",
+          "metrics": {
+            "HA": true,
+            "MS": false,
+            "OP": false,
+            "completeness_score": 4,
+            "assumption_use_score": 4
+          },
+          "error_set": {
+            "hallucinations": [],
+            "missing_steps": [],
+            "operator_errors": [],
+            "assumption_violations": []
+          },
+          "flagged_steps": [],
+          "correction_metrics": {
+            "error_resolution_rate": 1.0,
+            "regression_penalty": 0.0,
+            "targeted_fix_precision": 1.0,
+            "correction_reasoning_score": 1.0,
+            "crs_raw": 1.0,
+            "errors_fixed": 4,
+            "errors_introduced": 0,
+            "flagged_fixed": 0,
+            "total_flagged": 0,
+            "is_mixed_transition": false,
+            "prev_error_count": 4,
+            "curr_error_count": 0
+          },
+          "judge_evaluations": [],
+          "judge_reliability": []
+        }
+      },
+      "summary": {
+        "verdict": "PASS_MINOR",
+        "completeness_score": 4,
+        "has_errors": true,
+        "crs": 1.0
+      }
+    }
+  ],
+  "final_results": {
+    "verdict": "PASS_MINOR",
+    "total_iterations": 2,
+    "final_proof_length": 0,
+    "convergence_achieved": true
+  },
+  "statistics": {
+    "total_errors_identified": 9,
+    "errors_by_type": {
+      "hallucinations": 0,
+      "missing_steps": 4,
+      "operator_errors": 4,
+      "assumption_violations": 1
+    },
+    "verdict_progression": [
+      "CONDITIONAL",
+      "PASS_MINOR"
+    ],
+    "crs_progression": [
+      0.36,
+      1.0
+    ],
+    "proof_length_progression": [
+      9692,
+      11454
+    ]
+  }
+}

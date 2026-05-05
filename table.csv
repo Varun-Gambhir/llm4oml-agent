@@ -1,5 +1,6 @@
 Category,Task_ID,Problem Statement,Assumptions Used
-"Stochastic Gradient Descent (SGD) Variants (Basic inequality chains: variance bounds, descent lemmas)",B001,The algorithm iteratively updates the parameters by computing gradients on randomly sampled minibatches and taking a step in the negative gradient direction with a fixed step size.,Strongly convex and smooth functions
+"Stochastic Gradient Descent (SGD) Variants (Basic inequality chains: variance bounds, descent lemmas)"
+,B001,The algorithm iteratively updates the parameters by computing gradients on randomly sampled minibatches and taking a step in the negative gradient direction with a fixed step size.,Strongly convex and smooth functions
 ,B002,The algorithm iteratively updates the parameters by computing gradients on randomly sampled minibatches and taking a step in the negative gradient direction with a fixed step size.,Strongly convex and non-smooth functions
 ,B003,The algorithm iteratively updates the parameters by computing gradients on randomly sampled minibatches and taking a step in the negative gradient direction with a fixed step size.,Convex and smooth functions
 ,B004,The algorithm iteratively updates the parameters by computing gradients on randomly sampled minibatches and taking a step in the negative gradient direction with a fixed step size.,Convex and non-smooth functions

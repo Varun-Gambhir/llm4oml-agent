@@ -1,0 +1,107 @@
+{
+  "study_metadata": {
+    "total_configs_tested": 81,
+    "metric": "spearman_r vs Overall_Score"
+  },
+  "default_config": {
+    "w_err": 0.5,
+    "w_tfp": 0.5,
+    "w_rp_pen": 0.4,
+    "spearman_r": 0.065049,
+    "pearson_r": 0.009886
+  },
+  "best_config": {
+    "w_err": 0.1,
+    "w_tfp": 0.9,
+    "w_rp_pen": 0.0,
+    "spearman_r": 0.065049,
+    "pearson_r": 0.245229,
+    "mae_vs_human": 0.11746
+  },
+  "sensitivity": {
+    "spearman_range": 0.127342,
+    "spearman_std": 0.06025822626870127
+  },
+  "top_10_configs": [
+    {
+      "w_err": 0.1,
+      "w_tfp": 0.9,
+      "w_rp_pen": 0.0,
+      "spearman_r": 0.065049,
+      "pearson_r": 0.245229,
+      "mae_vs_human": 0.11746
+    },
+    {
+      "w_err": 0.1,
+      "w_tfp": 0.9,
+      "w_rp_pen": 0.1,
+      "spearman_r": 0.065049,
+      "pearson_r": 0.245766,
+      "mae_vs_human": 0.117619
+    },
+    {
+      "w_err": 0.1,
+      "w_tfp": 0.9,
+      "w_rp_pen": 0.2,
+      "spearman_r": 0.065049,
+      "pearson_r": 0.246287,
+      "mae_vs_human": 0.117778
+    },
+    {
+      "w_err": 0.1,
+      "w_tfp": 0.9,
+      "w_rp_pen": 0.3,
+      "spearman_r": 0.065049,
+      "pearson_r": 0.246794,
+      "mae_vs_human": 0.117937
+    },
+    {
+      "w_err": 0.1,
+      "w_tfp": 0.9,
+      "w_rp_pen": 0.4,
+      "spearman_r": 0.065049,
+      "pearson_r": 0.247288,
+      "mae_vs_human": 0.118095
+    },
+    {
+      "w_err": 0.1,
+      "w_tfp": 0.9,
+      "w_rp_pen": 0.5,
+      "spearman_r": 0.065049,
+      "pearson_r": 0.247767,
+      "mae_vs_human": 0.118254
+    },
+    {
+      "w_err": 0.1,
+      "w_tfp": 0.9,
+      "w_rp_pen": 0.6,
+      "spearman_r": 0.065049,
+      "pearson_r": 0.248234,
+      "mae_vs_human": 0.118413
+    },
+    {
+      "w_err": 0.1,
+      "w_tfp": 0.9,
+      "w_rp_pen": 0.7,
+      "spearman_r": 0.065049,
+      "pearson_r": 0.248689,
+      "mae_vs_human": 0.118571
+    },
+    {
+      "w_err": 0.1,
+      "w_tfp": 0.9,
+      "w_rp_pen": 0.8,
+      "spearman_r": 0.065049,
+      "pearson_r": 0.249131,
+      "mae_vs_human": 0.11873
+    },
+    {
+      "w_err": 0.2,
+      "w_tfp": 0.8,
+      "w_rp_pen": 0.0,
+      "spearman_r": 0.065049,
+      "pearson_r": 0.171162,
+      "mae_vs_human": 0.149206
+    }
+  ]
+}

@@ -4,42 +4,53 @@ import Mathlib.Topology.MetricSpace.Basic
 import Mathlib.Algebra.BigOperators.Group.Finset.Basic
 
 open Real
-open Finset
+open scoped BigOperators
 
-/-- Smoothness (Descent) Lemma for an L‑smooth function `f : ℝ → ℝ`. -/
-lemma smoothness_descent (L : ℝ) (f : ℝ → ℝ) :
-  ∀ x y : ℝ, f y ≤ f x + deriv f x * (y - x) + (L / 2) * (y - x) ^ 2 :=
+-- 1. Linear convergence of constant‑step‑size SGD
+theorem linear_convergence_constant_step_SGD
+  (f : ℝ → ℝ) (grad : (ℝ → ℝ) → ℝ → ℝ)
+  (L μ η σ : ℝ) (x0 x_star : ℝ) (k : ℕ) :
+  (0 < μ) → (0 < L) → (0 < η) → (η ≤ 1 / (L + μ)) →
+  (∀ i : ℕ, ‖grad f (x0)‖ ≤ σ) →   -- placeholder bounded variance
+  ‖x0 - x_star‖^2 ≤ (1 - η * μ) ^ k * ‖x0 - x_star‖^2 + (η * σ ^ 2) / μ :=
 by sorry
 
-/-- Three‑point identity for a differentiable function `f : ℝ → ℝ`. -/
-lemma three_point_identity (f : ℝ → ℝ) :
-  ∀ x y z : ℝ,
-    (deriv f x - deriv f y) * (z - y) =
-      (f z - f y - deriv f y * (z - y)) -
-      (f z - f x - deriv f x * (z - x)) -
-      (f x - f y - deriv f y * (x - y)) :=
+-- 2. Descent‑type inequality for the expected squared distance
+theorem descent_inequality_expected_squared_distance
+  (f : ℝ → ℝ) (grad : (ℝ → ℝ) → ℝ → ℝ)
+  (μ η σ : ℝ) (x_k x_star : ℝ) :
+  (0 < μ) → (0 < η) →
+  ‖x_k - x_star‖^2 ≤ (1 - 2 * η * μ) * ‖x_k - x_star‖^2 + η ^ 2 * σ ^ 2 :=
 by sorry
 
-/-- Summation bound for the diminishing stepsize `η_t = 1/(t+1)`. -/
-lemma diminishing_stepsize_sum_bound (T : ℕ) :
-  (∑ t in Finset.range T, (1 / ((t : ℝ) + 1))) ≤ Real.log (T + 1) :=
+-- 3. Three‑point identity for L‑smooth functions
+theorem three_point_identity_L_smooth
+  (f : ℝ → ℝ) (grad : (ℝ → ℝ) → ℝ → ℝ)
+  (L : ℝ) (x y : ℝ) :
+  (0 < L) →
+  (grad f x - grad f y) * (x - y) =
+    (1 / (2 * L)) * (grad f x - grad f y) ^ 2 + (L / 2) * (x - y) ^ 2 :=
 by sorry
 
-/-- Gradient‑norm summation inequality for SGD iterates. -/
-lemma gradient_norm_sum_inequality
-  (F : ℝ → ℝ) (η L : ℕ → ℝ) (w : ℕ → ℝ) (wstar : ℝ) (T : ℕ) :
-  (∑ t in Finset.range T, η t * (deriv F (w t)) ^ 2) ≤
-    (F (w 0) - F wstar) + (∑ t in Finset.range T, L t * (η t) ^ 2) :=
+-- 4. Quadratic lower bound from μ‑strong convexity
+theorem quadratic_lower_bound_strong_convexity
+  (f : ℝ → ℝ) (grad : (ℝ → ℝ) → ℝ → ℝ)
+  (μ : ℝ) (x y : ℝ) :
+  (0 < μ) →
+  f y ≥ f x + grad f x * (y - x) + (μ / 2) * (y - x) ^ 2 :=
 by sorry
 
-/-- Non‑negativity of the difference `F w₀ - F w*` when `F` is non‑negative everywhere. -/
-lemma diff_nonneg (F : ℝ → ℝ) (w0 wstar : ℝ) (hF : ∀ x, 0 ≤ F x) :
-  0 ≤ F w0 - F wstar :=
+-- 5. Steady‑state neighbourhood of constant‑step‑size SGD
+theorem steady_state_neighbourhood_constant_step_SGD
+  (f : ℝ → ℝ) (grad : (ℝ → ℝ) → ℝ → ℝ)
+  (μ η σ : ℝ) (x_star : ℝ) (x : ℕ → ℝ) :
+  (0 < μ) → (0 < η) →
+  ∃ R : ℝ, (0 ≤ R) ∧ (∀ k : ℕ, ‖x k - x_star‖ ≤ R) :=
 by sorry
 
-/-- Main convergence theorem for stochastic gradient descent (SGD). -/
-theorem sgd_convergence
-  (F : ℝ → ℝ) (L : ℝ) (η : ℕ → ℝ) (w : ℕ → ℝ) (wstar : ℝ) (σ² : ℝ) (T : ℕ) :
-  (∑ t in Finset.range T, η t) * (F (w T) - F wstar) ≤
-    (F (w 0) - F wstar) + (L / 2) * (∑ t in Finset.range T, (η t) ^ 2) + σ² * (∑ t in Finset.range T, η t) :=
+-- 6. Optimal admissible constant stepsize
+theorem optimal_admissible_constant_stepsize
+  (L μ : ℝ) :
+  ∃ η_opt : ℝ, (0 < η_opt) ∧ (η_opt ≤ 1 / (L + μ)) ∧
+    (∀ η > 0, η ≤ 1 / (L + μ) → η ≤ η_opt) :=
 by sorry
