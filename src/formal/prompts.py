@@ -54,3 +54,51 @@ CRITICAL RULES:
 
 Return ONLY valid Lean 4 code, no explanations.
 """
+
+
+AUTO_PROOF_PROMPT = """
+You are a Lean 4 theorem prover.
+
+GOAL CLAIM:
+{claim}
+
+OPTIONAL CONTEXT:
+{context}
+
+Write a complete Lean 4 file that proves the goal claim.
+
+Hard requirements:
+1. Output only Lean code (no prose).
+2. Do not use `sorry`.
+3. Keep imports minimal and valid.
+4. Prefer reusable helper imports from this project:
+  `import ProofChecks.Lemmas`
+5. If the exact claim cannot be formalized as written, rewrite it into the nearest
+  precise, provable statement and prove that statement fully.
+
+Return only a single Lean file.
+"""
+
+
+AUTO_PROOF_REPAIR_PROMPT = """
+You are repairing a Lean 4 proof file that failed strict verification.
+
+TARGET CLAIM:
+{claim}
+
+PREVIOUS LEAN FILE:
+```lean
+{previous_lean}
+```
+
+LEAN DIAGNOSTICS:
+{diagnostics}
+
+Produce a corrected Lean 4 file that:
+1. Fixes all reported errors.
+2. Contains no `sorry`.
+3. Keeps imports minimal and valid.
+4. Uses `import ProofChecks.Lemmas` when useful.
+
+Return only Lean code.
+"""

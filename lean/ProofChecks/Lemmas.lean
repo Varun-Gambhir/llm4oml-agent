@@ -1,8 +1,5 @@
 -- Minimal helper imports and small conveniences for ProofChecks
-import Mathlib.Analysis.NormedSpace.Basic
-import Mathlib.Analysis.InnerProductSpace.Basic
-import Mathlib.Analysis.Convex.Basic
-import Mathlib.Tactic.Basic
+import Mathlib
 
 namespace ProofChecks
 
