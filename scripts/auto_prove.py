@@ -11,8 +11,10 @@ This script is designed to automate future proof-building runs:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -88,10 +90,67 @@ def run_auto_prove(
             temperature=temperature,
         )
 
+    # Cache: map claim_hash -> {status, lean_code, timestamp}
+    cache_file = ROOT / "output" / "auto_prove" / "cache.json"
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    if cache_file.exists():
+        try:
+            with open(cache_file, "r", encoding="utf-8") as cf:
+                cache = json.load(cf)
+        except Exception:
+            cache = {}
+    else:
+        cache = {}
+
+    def _save_cache():
+        with open(cache_file, "w", encoding="utf-8") as cf:
+            json.dump(cache, cf, indent=2)
+
+    def _claim_hash(s: str) -> str:
+        return hashlib.sha256(s.encode("utf-8")).hexdigest()
+
+    # Rate limiting: minimum seconds between LLM calls
+    last_call = {"t": 0.0}
+    min_delay = float(1.0)
+
+    def _invoke_llm_with_rate_limit(prompt: list[dict[str, str]], temperature: float, max_attempts: int = 3) -> str:
+        # simple rate limiter
+        now = time.time()
+        elapsed = now - last_call["t"]
+        if elapsed < min_delay:
+            time.sleep(min_delay - elapsed)
+        last_call["t"] = time.time()
+
+        # wrapper for provider invoke with extra retry/backoff
+        last_exc = None
+        for attempt in range(max_attempts):
+            try:
+                return llm.invoke(prompt, temperature=temperature)
+            except Exception as exc:
+                last_exc = exc
+                backoff = 2 ** attempt
+                time.sleep(backoff)
+        raise RuntimeError(f"LLM invoke failed after {max_attempts} attempts: {last_exc}")
+
     probe = LeanProbe(str(lean_dir), llm or SimpleNamespace(invoke=lambda *a, **k: ""))
     attempts: list[dict[str, Any]] = []
     prev_lean = ""
     prev_errors: list[str] = []
+
+    claim_hash = _claim_hash(claim)
+
+    # If cached success exists, restore and exit early
+    cached = cache.get(claim_hash)
+    if cached and cached.get("status") == "pass":
+        final_file = lean_dir / out_name
+        final_file.write_text(cached.get("lean_code", ""), encoding="utf-8")
+        return {
+            "status": "pass",
+            "attempts": [],
+            "final_file": str(final_file),
+            "cached": True,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
 
     for attempt in range(1, max_attempts + 1):
         if attempt == 1:
@@ -106,7 +165,7 @@ def run_auto_prove(
         if use_stub:
             raw = _stub_llm_response(attempt)
         else:
-            raw = llm.invoke([{"role": "user", "content": prompt}], temperature=temperature)
+            raw = _invoke_llm_with_rate_limit([{"role": "user", "content": prompt}], temperature)
 
         lean_code = _strip_lean_fences(raw)
         attempt_file = lean_dir / f"AutoProof_attempt_{attempt}.lean"
@@ -126,6 +185,14 @@ def run_auto_prove(
         if verdict.status == "pass":
             final_file = lean_dir / out_name
             final_file.write_text(lean_code, encoding="utf-8")
+            # update cache
+            cache[claim_hash] = {
+                "status": "pass",
+                "lean_code": lean_code,
+                "final_file": str(final_file),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+            _save_cache()
             result = {
                 "status": "pass",
                 "attempts": attempts,
@@ -162,6 +229,8 @@ def main() -> None:
     parser.add_argument("--model", type=str, default="gpt-4")
     parser.add_argument("--api-key", type=str, default=None)
     parser.add_argument("--temperature", type=float, default=0.05)
+    parser.add_argument("--min-delay", type=float, default=1.0, help="Minimum seconds between LLM calls (rate limit)")
+    parser.add_argument("--cache-file", type=str, default=None, help="Path to cache json (optional)")
     parser.add_argument("--stub", action="store_true", help="Run without API calls using deterministic stub responses")
 
     args = parser.parse_args()
