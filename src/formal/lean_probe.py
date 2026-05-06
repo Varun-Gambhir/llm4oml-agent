@@ -1,8 +1,7 @@
 # src/formal/lean_probe.py
+import logging
 import subprocess
 import time
-import logging
-import os
 from pathlib import Path
 from dataclasses import dataclass, field
 
@@ -11,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class LeanVerdict:
-    status: str          # "pass" | "sorry_pass" | "fail" | "timeout" | "unavailable"
+    status: str          # "pass" | "fail" | "timeout" | "unavailable"
     errors: list[str] = field(default_factory=list)
     lean_code: str = ""
     elapsed_seconds: float = 0.0
@@ -25,12 +24,6 @@ class LeanVerdict:
     def to_feedback_string(self) -> str:
         if self.status == "pass":
             return "LEAN: All theorem statements type-check with complete proofs."
-        if self.status == "sorry_pass":
-            return (
-                "LEAN: Theorem statements are well-typed. "
-                "Proofs use sorry placeholders — logical structure accepted, "
-                "but correctness is not formally verified."
-            )
         if self.status == "fail":
             err_block = "\n".join(f"  - {e}" for e in self.errors[:5])
             return (
@@ -139,14 +132,26 @@ class LeanProbe:
 
         elapsed = time.time() - start
         has_sorry = "sorry" in lean_code
+        sorry_warnings = [
+            line.strip()
+            for line in (result.stdout + result.stderr).splitlines()
+            if "warning:" in line.lower() and "sorry" in line.lower()
+        ]
         errors = [
             line.strip()
             for line in (result.stdout + result.stderr).splitlines()
             if "error:" in line.lower()
         ]
 
-        if result.returncode == 0:
-            status = "sorry_pass" if has_sorry else "pass"
+        if has_sorry or sorry_warnings:
+            errors = [
+                *errors,
+                *sorry_warnings,
+                "Lean source still contains `sorry`; strict verification requires complete proofs.",
+            ]
+            status = "fail"
+        elif result.returncode == 0:
+            status = "pass"
         else:
             status = "fail"
 

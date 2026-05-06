@@ -30,8 +30,9 @@ CLAIMS TO FORMALIZE:
 Write a complete Lean 4 file that:
 1. Imports from Mathlib (use standard imports below)
 2. Declares each claim as a `theorem` or `lemma`
-3. Uses `sorry` for all proofs — we are checking TYPE CORRECTNESS only
-4. Uses realistic types: ℝ for real numbers, ℕ for iteration counts,
+3. Proves each theorem with real Lean code; do NOT use `sorry`
+4. If a claim cannot be proved cleanly, omit it or rewrite it so it can be proved
+5. Uses realistic types: ℝ for real numbers, ℕ for iteration counts,
    functions like `f : ℝ → ℝ` for objectives
 
 Standard imports to include:
@@ -44,11 +45,11 @@ import Mathlib.Algebra.BigOperators.Group.Finset.Basic
 
 CRITICAL RULES:
 - Do NOT include any extra `import` statements. Use ONLY the 4 imports provided above.
-- Every proof body must be exactly `by sorry`
+- Every proof body must be a complete Lean proof with no `sorry`
 - Use `∀`, `∃`, `∧`, `→` for quantifiers (not English)
 - Use `Finset.sum` for finite sums ∑
 - Use `|·|` for absolute value, `‖·‖` for norms
-- If a claim cannot be typed cleanly, write a comment `-- UNTYPEABLE: <reason>`
+- If a claim cannot be typed cleanly or proved, write a comment `-- UNTYPEABLE: <reason>`
   and skip it
 
 Return ONLY valid Lean 4 code, no explanations.

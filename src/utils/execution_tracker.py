@@ -89,6 +89,7 @@ class ExecutionTracker:
                     "feedback": state.get("feedback", ""),
                     "verdict": state.get("verdict", ""),
                     "metrics": state.get("metrics", {}),
+                    "lean_verdict": state.get("lean_verdict"),
                     "error_set": self._serialise_error_set(
                         state.get("error_set_current", {})
                     ),
@@ -164,6 +165,9 @@ class ExecutionTracker:
                     [m.get("HA", False), m.get("MS", False), m.get("OP", False)]
                 ),
             }
+            lean = ev.get("lean_verdict")
+            if isinstance(lean, dict):
+                summary["lean_status"] = lean.get("status")
             cm = ev.get("correction_metrics")
             if cm:
                 summary["crs"] = (

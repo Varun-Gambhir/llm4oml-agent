@@ -161,6 +161,7 @@ class WorkflowNodes:
                     "status": lean_verdict.status,
                     "errors": lean_verdict.errors,
                     "elapsed_seconds": lean_verdict.elapsed_seconds,
+                    "claims_extracted": lean_verdict.claims_extracted,
                 }
                 # Append Lean feedback to the correction prompt
                 if lean_verdict.is_useful and lean_verdict.status == "fail":
