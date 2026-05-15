@@ -35,8 +35,8 @@ Rules:
 3. Never invent identifiers.
 4. Every theorem must compile under:
    import Mathlib
-5. If unsure, use `by
-  sorry`
+5. DO NOT translate full proofs. Produce theorem statements only, with minimal
+  proof skeletons. Every proof body must be exactly `by sorry`.
 6. Do not explain anything.
 7. Do not use markdown fences.
 8. All variables must have explicit types.
@@ -54,6 +54,7 @@ import Mathlib.Algebra.BigOperators.Group.Finset.Basic
 CRITICAL RULES:
 - Do NOT include any extra `import` statements. Use ONLY the 4 imports provided above.
 - Every proof body must be exactly `by sorry`
+- Do NOT translate full proofs; return only theorem statements and minimal `by sorry` bodies.
 - Use `∀`, `∃`, `∧`, `→` for quantifiers (not English)
 - Use `Finset.sum` for finite sums ∑
 - Use `|·|` for absolute value, `‖·‖` for norms

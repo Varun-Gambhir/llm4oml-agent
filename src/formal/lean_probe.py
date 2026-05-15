@@ -3,6 +3,7 @@ import subprocess
 import time
 import logging
 import os
+import re
 from pathlib import Path
 from dataclasses import dataclass, field
 
@@ -72,6 +73,24 @@ class LeanProbe:
             logger.warning("[LeanProbe] Lean not found — probe will be skipped.")
             return False
 
+    # Patterns that indicate the generation contains LaTeX/markdown or other
+    # artifacts not suitable for direct Lean submission.
+    BAD_PATTERNS = [
+        r"\\frac",
+        r"\\sum",
+        r"\\begin",
+        r"\\end",
+        r"\$",
+        r"```",
+    ]
+
+    def _contains_bad_patterns(self, text: str) -> list[str]:
+        matches = []
+        for p in self.BAD_PATTERNS:
+            if re.search(p, text):
+                matches.append(p)
+        return matches
+
     def probe(self, latex_proof: str, algorithm: str = "") -> LeanVerdict:
         if not self._lean_available:
             return LeanVerdict(status="unavailable")
@@ -104,60 +123,114 @@ class LeanProbe:
     def _translate_to_lean(self, claims: list[str], algorithm: str) -> str:
         from .prompts import LEAN_TRANSLATION_PROMPT
         claims_text = "\n".join(f"{i+1}. {c}" for i, c in enumerate(claims))
-        return self.llm.invoke(
-            [{"role": "user", "content": LEAN_TRANSLATION_PROMPT.format(
-                claims=claims_text, algorithm=algorithm
-            )}],
+        # First generation
+        prompt = LEAN_TRANSLATION_PROMPT.format(claims=claims_text, algorithm=algorithm)
+        gen = self.llm.invoke(
+            [{"role": "user", "content": prompt}],
             temperature=0.05,
         )
 
+        # If the LLM output contains explicit LaTeX/markdown artifacts, ask
+        # it to regenerate clean Lean-only code. A couple of retries are
+        # allowed to handle noisy outputs.
+        for _ in range(2):
+            if not self._contains_bad_patterns(gen):
+                break
+            regen_prompt = (
+                "The previous response contained LaTeX or markdown artifacts. "
+                "Return ONLY valid Lean 4 code (no fences, no LaTeX, no `$`), "
+                "and keep all proof bodies as `by sorry`. Minimal skeletons only.\n\n"
+                + prompt
+            )
+            gen = self.llm.invoke(
+                [{"role": "user", "content": regen_prompt}],
+                temperature=0.02,
+            )
+
+        return gen
+
     def _run_lean(self, lean_code: str, claims: list[str]) -> LeanVerdict:
-        # Strip markdown fences if LLM wrapped the code
-        import re
+        # Clean common markdown fences
         lean_code = re.sub(r"```lean\s*", "", lean_code)
         lean_code = re.sub(r"```\s*$", "", lean_code, flags=re.MULTILINE).strip()
 
-        target = self.lean_dir / f"ProofChecks_attempt_{int(time.time())}.lean"
-        lean_code = (
-            "set_option autoImplicit false\n"
-            + lean_code
-        )
-        target.write_text(lean_code, encoding="utf-8")
-
-        start = time.time()
-        try:
-            result = subprocess.run(
-                [self._lake_bin, "env", "lean", str(target)],
-                cwd=self.lean_dir,
-                capture_output=True,
-                text=True,
-                timeout=self.LEAN_TIMEOUT,
-            )
-        except subprocess.TimeoutExpired:
+        # Pre-filter: reject obvious LaTeX/markdown artifacts before running
+        bad = self._contains_bad_patterns(lean_code)
+        if bad:
             return LeanVerdict(
-                status="timeout",
+                status="fail",
+                errors=[f"Rejected generation due to forbidden patterns: {bad}"],
                 lean_code=lean_code,
-                elapsed_seconds=self.LEAN_TIMEOUT,
                 claims_extracted=claims,
             )
 
-        elapsed = time.time() - start
-        has_sorry = "sorry" in lean_code
-        errors = [
-            line.strip()
-            for line in (result.stdout + result.stderr).splitlines()
-            if "error:" in line.lower()
-        ]
+        # Try compile + repair loop
+        target = self.lean_dir / f"ProofChecks_attempt_{int(time.time())}.lean"
+        lean_code = "set_option autoImplicit false\n" + lean_code
 
-        if result.returncode == 0:
-            status = "sorry_pass" if has_sorry else "pass"
-        else:
-            status = "fail"
+        max_attempts = 3
+        start_total = time.time()
+        for attempt in range(max_attempts):
+            target.write_text(lean_code, encoding="utf-8")
+            try:
+                result = subprocess.run(
+                    [self._lake_bin, "env", "lean", str(target)],
+                    cwd=self.lean_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=self.LEAN_TIMEOUT,
+                )
+            except subprocess.TimeoutExpired:
+                return LeanVerdict(
+                    status="timeout",
+                    lean_code=lean_code,
+                    elapsed_seconds=self.LEAN_TIMEOUT,
+                    claims_extracted=claims,
+                )
 
+            elapsed = time.time() - start_total
+            has_sorry = "sorry" in lean_code
+            errors = [
+                line.strip()
+                for line in (result.stdout + result.stderr).splitlines()
+                if "error:" in line.lower()
+            ]
+
+            if result.returncode == 0:
+                status = "sorry_pass" if has_sorry else "pass"
+                return LeanVerdict(
+                    status=status,
+                    errors=[],
+                    lean_code=lean_code,
+                    elapsed_seconds=round(elapsed, 2),
+                    claims_extracted=claims,
+                )
+
+            # If compilation failed, attempt automatic repair using LLM diagnostics
+            if attempt < max_attempts - 1:
+                repair_msg = (
+                    "The following Lean 4 code failed to compile. "
+                    "Here are the compiler error lines (please do not include explanations):\n"
+                    + "\n".join(errors[:20])
+                    + "\n\nPlease return ONLY corrected Lean 4 code that fixes the errors. "
+                    "Keep proofs as `by sorry` and do not add any markdown or LaTeX. "
+                    "Make minimal edits necessary to typecheck.\n\n"
+                    + lean_code
+                )
+                regen = self.llm.invoke(
+                    [{"role": "user", "content": repair_msg}],
+                    temperature=0.02,
+                )
+                # Clean fences and replace lean_code for next attempt
+                regen = re.sub(r"```lean\s*", "", regen)
+                regen = re.sub(r"```\s*$", "", regen, flags=re.MULTILINE).strip()
+                lean_code = regen if regen.strip() else lean_code
+
+        # After retries, report failure with captured errors
         return LeanVerdict(
-            status=status,
+            status="fail",
             errors=errors[:10],
             lean_code=lean_code,
-            elapsed_seconds=round(elapsed, 2),
+            elapsed_seconds=round(time.time() - start_total, 2),
             claims_extracted=claims,
         )
