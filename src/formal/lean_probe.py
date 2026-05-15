@@ -117,13 +117,17 @@ class LeanProbe:
         lean_code = re.sub(r"```lean\s*", "", lean_code)
         lean_code = re.sub(r"```\s*$", "", lean_code, flags=re.MULTILINE).strip()
 
-        target = self.lean_dir / "ProofChecks.lean"
+        target = self.lean_dir / f"ProofChecks_attempt_{int(time.time())}.lean"
+        lean_code = (
+            "set_option autoImplicit false\n"
+            + lean_code
+        )
         target.write_text(lean_code, encoding="utf-8")
 
         start = time.time()
         try:
             result = subprocess.run(
-                [self._lake_bin, "build"],
+                [self._lake_bin, "env", "lean", str(target)],
                 cwd=self.lean_dir,
                 capture_output=True,
                 text=True,

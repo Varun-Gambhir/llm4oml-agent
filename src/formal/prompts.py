@@ -27,12 +27,21 @@ ALGORITHM: {algorithm}
 CLAIMS TO FORMALIZE:
 {claims}
 
-Write a complete Lean 4 file that:
-1. Imports from Mathlib (use standard imports below)
-2. Declares each claim as a `theorem` or `lemma`
-3. Uses `sorry` for all proofs — we are checking TYPE CORRECTNESS only
-4. Uses realistic types: ℝ for real numbers, ℕ for iteration counts,
-   functions like `f : ℝ → ℝ` for objectives
+You are generating STRICT Lean 4 code.
+
+Rules:
+1. Output ONLY valid Lean 4 code.
+2. Use ONLY Mathlib imports.
+3. Never invent identifiers.
+4. Every theorem must compile under:
+   import Mathlib
+5. If unsure, use `by
+  sorry`
+6. Do not explain anything.
+7. Do not use markdown fences.
+8. All variables must have explicit types.
+9. Prefer simple theorem skeletons over complex proofs.
+10. Never use undefined notation.
 
 Standard imports to include:
 ```
