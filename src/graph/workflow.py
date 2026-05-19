@@ -61,7 +61,6 @@ class ProofWorkflow:
         # ── ABLATION PATCH ────────────────────────────────────────────────────
         crs_weights: Optional[Dict[str, float]] = None,
         per_judge_timeout: int = 600,
-        lean_project_dir: Optional[str] = None,
         # ─────────────────────────────────────────────────────────────────────
     ):
         if evaluator_models is None:
@@ -84,7 +83,6 @@ class ProofWorkflow:
             temp_config=temp_config,
             crs_weights=crs_weights,        # ← ABLATION PATCH
             per_judge_timeout=per_judge_timeout,
-            lean_project_dir=lean_project_dir,
         )
 
         self.config = {

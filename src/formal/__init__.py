@@ -1,1 +1,1 @@
-"""Formal module for Lean 4 integration."""
+"""Formal utilities for proof-related workflows."""
