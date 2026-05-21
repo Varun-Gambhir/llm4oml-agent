@@ -2,30 +2,35 @@
 # File: src/metrics/correction_metrics.py
 # ============================================================================
 """
-Correction Reasoning Score (CRS) computation — v3 fixed implementation.
+Regression-Aware Correction Score (RACS) computation — v3 fixed implementation.
 
 ROOT CAUSE of the always-0.7 bug in v2:
-  With weights (0.5, 0.3, 0.2) and formula  CRS = w_err*ERR - w_rp*RP + w_tfp*TFP
+  With weights (0.5, 0.3, 0.2) and formula  RACS = w_err*ERR - w_rp*RP + w_tfp*TFP
   When a proof goes from N errors → 0 errors:
     ERR = 1.0   (all previous errors fixed)
     RP  = 0.0   (no new errors introduced)
     TFP = 1.0   (all flagged steps addressed)
-  ⟹ CRS = 0.5*1.0 - 0.3*0.0 + 0.2*1.0 = 0.70 — always 0.70!
+  ⟹ RACS = 0.5*1.0 - 0.3*0.0 + 0.2*1.0 = 0.70 — always 0.70!
 
-  The ceiling is structural: max(CRS) = w_err + w_tfp = 0.5 + 0.2 = 0.70.
+  The ceiling is structural: max(RACS) = w_err + w_tfp = 0.5 + 0.2 = 0.70.
 
 FIXES in v3:
   1. Weights now sum to 1.0 correctly: ERR=0.5, RP_penalty=0.3 kept as penalty
      but TFP raised to 0.5, then normalised so max reachable = 1.0.
   2. New formula (calibrated):
-       CRS = (w_err * ERR + w_tfp * TFP) * (1 - w_rp_pen * RP_clamped)
+       RACS = (w_err * ERR + w_tfp * TFP) * (1 - w_rp_pen * RP_clamped)
      This multiplicative penalty means:
-       - Perfect correction (ERR=1, TFP=1, RP=0) → CRS = 1.0
-       - Perfect but with some regression      → CRS < 1.0 (proportional)
-       - No fix + regression                   → CRS can approach 0
+       - Perfect correction (ERR=1, TFP=1, RP=0) → RACS = 1.0
+       - Perfect but with some regression      → RACS < 1.0 (proportional)
+       - No fix + regression                   → RACS can approach 0
   3. RP is normalised to [0,1] before applying the penalty weight.
   4. When error_set_previous is empty (first iteration baseline), a synthetic
-     "first-iteration CRS" is computed from static quality alone.
+     "first-iteration RACS" is computed from static quality alone.
+
+NOTE: This metric is also known as CRS (Correction Reasoning Score) in some
+contexts, but RACS (Regression-Aware Correction Score) is the preferred name
+as it emphasizes the regression penalty mechanism which distinguishes it from
+naive correction metrics.
 """
 
 import numpy as np
@@ -122,15 +127,15 @@ class CorrectionMetricsCalculator:
         total_steps_current: int = 0,  # kept for API compat, unused now
     ) -> CorrectionMetricsOutput:
         """
-        Compute the full Correction Reasoning Score.
+        Compute the full Regression-Aware Correction Score (RACS).
 
         Formula (multiplicative penalty):
             quality = w_err * ERR + w_tfp * TFP
-            CRS_raw = quality * (1 - w_rp_pen * RP_norm)
-            CRS     = clip(CRS_raw, 0, 1)
+            RACS_raw = quality * (1 - w_rp_pen * RP_norm)
+            RACS     = clip(RACS_raw, 0, 1)
 
         Maximum achievable:
-            ERR=1, TFP=1, RP_norm=0 → CRS = 1.0 * 1.0 = 1.0  ✓
+            ERR=1, TFP=1, RP_norm=0 → RACS = 1.0 * 1.0 = 1.0  ✓
         """
         prev_all = self.tracker.get_all_errors(prev_error_set)
         curr_all = self.tracker.get_all_errors(curr_error_set)
@@ -173,14 +178,14 @@ class CorrectionMetricsCalculator:
         self, metrics: EvaluationMetrics
     ) -> CorrectionMetricsOutput:
         """
-        Synthetic CRS for the very first iteration (no previous error set).
+        Synthetic RACS for the very first iteration (no previous error set).
         Derived purely from static quality scores rather than delta-tracking.
 
         Formula:
             static_quality = (completeness_score / 5.0) * 0.6
                            + (assumption_use_score / 5.0) * 0.4
             error_penalty  = num_errors / (num_errors + 1)   [sigmoid-like]
-            CRS_first      = static_quality * (1 - 0.5 * error_penalty)
+            RACS_first     = static_quality * (1 - 0.5 * error_penalty)
         """
         static_quality = (
             (metrics.completeness_score / 5.0) * 0.6
