@@ -1,0 +1,18 @@
+H3 HYPOTHESIS TEST (Using CSV Summaries)
+========================================
+Analyzed 252 proofs across 4 penalty settings.
+
+1. Convergence Speed Effect:
+   Spearman r = 0.8000, p-value = 0.2000
+   (Negative r means higher penalty means fewer iterations)
+
+2. Oscillation/Regression Effect (Proxy: Introduced Errors):
+   Spearman r = 0.8000, p-value = 0.2000
+   (Negative r means higher penalty means fewer regressions)
+
+Averages by Penalty:
+ w_rp_pen  mean_iterations  mean_introduced_errors  conv_rate  n_samples
+      0.0         1.079365                0.063492   0.984127         63
+      0.2         1.126984                0.142857   0.952381         63
+      0.4         1.174603                0.111111   0.936508         63
+      0.6         1.142857                0.190476   0.968254         63

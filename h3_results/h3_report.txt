@@ -1,0 +1,28 @@
+H3 HYPOTHESIS TEST (Using CSV Summaries)
+================================================================================
+HYPOTHESIS:
+  Higher regression penalty compresses oscillation and accelerates convergence.
+
+NOTE ON DATASET:
+  This dataset converges very quickly (mean ~1.1 iterations). Because most proofs
+  don't require feedback loops, oscillation is exceedingly rare in this sample.
+  True oscillation measurement requires deep trajectory logs (JSONs), but we can
+  approximate it here using 'introduced errors' and 'total iterations'.
+
+1. Convergence Speed Effect (Total Iterations):
+   Spearman r: 0.8000
+   p-value:    0.2000
+   (Negative r supports H3 = higher penalty reduces iterations)
+
+2. Oscillation/Regression Proxy (Introduced Errors):
+   Spearman r: 0.8000
+   p-value:    0.2000
+   (Negative r supports H3 = higher penalty reduces regression)
+
+Summary Statistics:
+--------------------------------------------------------------------------------
+ w_rp_pen  mean_iterations  mean_introduced_errors  convergence_rate  samples
+      0.0         1.079365                0.063492          0.984127       63
+      0.2         1.126984                0.142857          0.952381       63
+      0.4         1.174603                0.111111          0.936508       63
+      0.6         1.142857                0.190476          0.968254       63
