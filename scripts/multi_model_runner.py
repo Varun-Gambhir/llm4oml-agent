@@ -25,6 +25,7 @@ def main():
     parser.add_argument("--models", nargs="+", required=True)
     parser.add_argument("--provider", default="nvidia")
     parser.add_argument("--judge-provider", default=None)
+    parser.add_argument("--judges", nargs="+", default=None)
     parser.add_argument("--output-root", default="batch_results")
     parser.add_argument("--api-key", default=None)
     parser.add_argument("--max-iter", type=int, default=None)
@@ -44,6 +45,8 @@ def main():
             cmd += ["--judge-provider", args.judge_provider]
         if args.config:
             cmd += ["--config", args.config]
+        if args.judges:
+            cmd += ["--judges"] + args.judges
         if args.multi_judge:
             cmd.append("--multi-judge")
         if args.api_key:
