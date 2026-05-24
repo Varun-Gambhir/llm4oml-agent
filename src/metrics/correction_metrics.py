@@ -49,17 +49,17 @@ class CorrectionMetricsCalculator:
 
     Parameters
     ----------
-    w_err   : weight for Error Resolution Rate     (default 0.50)
-    w_tfp   : weight for Targeted Fix Precision    (default 0.50)
+    w_err   : weight for Error Resolution Rate     (default 0.60)
+    w_tfp   : weight for Targeted Fix Precision    (default 0.40)
     w_rp_pen: penalty weight for Regression (multiplied into 1-RP term)
-              (default 0.40 — aggressive penalty for introducing new errors)
+              (default 0.20 — aggressive penalty for introducing new errors)
     """
 
     def __init__(
         self,
-        w_err: float = 0.50,
-        w_tfp: float = 0.50,
-        w_rp_pen: float = 0.40,
+        w_err: float = 0.60,
+        w_tfp: float = 0.40,
+        w_rp_pen: float = 0.20,
     ):
         if abs(w_err + w_tfp - 1.0) > 1e-6:
             raise ValueError(

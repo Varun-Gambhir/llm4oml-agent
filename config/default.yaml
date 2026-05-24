@@ -27,9 +27,9 @@ metrics:
   correction:
     # CRS formula: CRS = (w_err*ERR + w_tfp*TFP) * (1 - w_rp_pen*RP)
     # Max achievable = 1.0 (ERR=1, TFP=1, RP=0)
-    w_err: 0.50
-    w_tfp: 0.50
-    w_rp_pen: 0.40
+    w_err: 0.60
+    w_tfp: 0.40
+    w_rp_pen: 0.20
 
   judge_reliability:
     alpha: 0.6          # Weight for ESA (agreement)

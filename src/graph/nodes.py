@@ -96,9 +96,9 @@ class WorkflowNodes:
 
         # ── ABLATION PATCH: inject weights into calculator ────────────────────
         _w = crs_weights or {}
-        w_err    = float(_w.get("w_err",    0.50))
+        w_err    = float(_w.get("w_err",    0.60))
         w_tfp    = float(_w.get("w_tfp",    1.0 - w_err))   # honour explicit or derive
-        w_rp_pen = float(_w.get("w_rp_pen", 0.40))
+        w_rp_pen = float(_w.get("w_rp_pen", 0.20))
 
         # Normalise so w_err + w_tfp == 1.0 (required by CorrectionMetricsCalculator)
         total = w_err + w_tfp
