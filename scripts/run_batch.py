@@ -134,12 +134,14 @@ class BatchProcessor:
         temp_config: TemperatureConfig = None,
         yaml_config: dict = None,      # stored for reference / logging only
         per_judge_timeout: int = 600,
+        judge_provider_name: str = None,
     ):
         self.input_csv = input_csv
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True, parents=True)
 
         self.provider_name = provider_name
+        self.judge_provider_name = judge_provider_name or provider_name
         self.prover_model = prover_model
         self.evaluator_models = evaluator_models
         self.api_key = api_key
@@ -160,6 +162,7 @@ class BatchProcessor:
                 "input_file": str(input_csv),
                 "configuration": {
                     "provider": provider_name,
+                    "judge_provider": self.judge_provider_name,
                     "prover_model": prover_model,
                     "evaluator_models": evaluator_models,
                     "use_multi_judge": use_multi_judge,
@@ -262,6 +265,7 @@ class BatchProcessor:
 
         workflow = ProofWorkflow(
             provider_name=self.provider_name,
+            judge_provider_name=self.judge_provider_name,
             prover_model=self.prover_model,
             evaluator_models=self.evaluator_models,
             api_key=self.api_key,
@@ -543,6 +547,9 @@ Examples:
     parser.add_argument("--provider", default="nvidia",
                         choices=["nvidia", "openrouter", "openai", "anthropic"],
                         help="LLM provider (default: nvidia)")
+    parser.add_argument("--judge-provider", default=None,
+                        choices=["nvidia", "openrouter", "openai", "anthropic"],
+                        help="LLM provider for judges (defaults to the same as provider)")
     parser.add_argument("--api-key", default=None,
                         help="API key (can also be set via .env file)")
     parser.add_argument("--model", default=None,
@@ -604,6 +611,7 @@ Examples:
     print(f"{'─'*80}")
     print(f"  Config file   : {args.config or '(none — using CLI/defaults)'}")
     print(f"  Provider      : {args.provider}")
+    print(f"  Judge Provider: {args.judge_provider or args.provider}")
     print(f"  Prover model  : {args.model}")
     print(f"  Judge models  : {', '.join(evaluator_models)}")
     print(f"  Multi-judge   : {args.multi_judge}")
@@ -627,6 +635,7 @@ Examples:
         temp_config=temp_config,
         yaml_config=yaml_cfg,
         per_judge_timeout=per_judge_timeout,
+        judge_provider_name=args.judge_provider,
     ).process()
 
 

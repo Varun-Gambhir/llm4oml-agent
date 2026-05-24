@@ -52,6 +52,7 @@ class WorkflowNodes:
         # ── ABLATION PATCH ────────────────────────────────────────────────────
         crs_weights: Optional[Dict[str, float]] = None,
         per_judge_timeout: int = 600,
+        judge_provider_name: Optional[str] = None,
         # ─────────────────────────────────────────────────────────────────────
     ):
         self.temp_config = temp_config
@@ -66,9 +67,11 @@ class WorkflowNodes:
             temp_config=temp_config,
         )
 
+        actual_judge_provider = judge_provider_name or provider_name
+
         if use_multi_judge:
             self.evaluator = MultiJudgeEvaluator(
-                provider_name=provider_name,
+                provider_name=actual_judge_provider,
                 judge_models=evaluator_models,
                 api_key=api_key,
                 temperature=temp_config.evaluation,
@@ -79,7 +82,7 @@ class WorkflowNodes:
             )
         else:
             self.evaluator = SingleJudge(
-                provider_name=provider_name,
+                provider_name=actual_judge_provider,
                 model_name=evaluator_models[0],
                 judge_id="single_judge",
                 api_key=api_key,

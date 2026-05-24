@@ -61,6 +61,7 @@ class ProofWorkflow:
         # ── ABLATION PATCH ────────────────────────────────────────────────────
         crs_weights: Optional[Dict[str, float]] = None,
         per_judge_timeout: int = 600,
+        judge_provider_name: Optional[str] = None,
         # ─────────────────────────────────────────────────────────────────────
     ):
         if evaluator_models is None:
@@ -83,10 +84,12 @@ class ProofWorkflow:
             temp_config=temp_config,
             crs_weights=crs_weights,        # ← ABLATION PATCH
             per_judge_timeout=per_judge_timeout,
+            judge_provider_name=judge_provider_name,
         )
 
         self.config = {
             "provider": provider_name,
+            "judge_provider": judge_provider_name or provider_name,
             "prover_model": prover_model,
             "evaluator_models": evaluator_models,
             "use_multi_judge": use_multi_judge,

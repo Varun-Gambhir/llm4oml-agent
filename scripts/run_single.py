@@ -24,6 +24,10 @@ def main():
         "--provider", default="nvidia",
         choices=["nvidia", "openrouter", "openai", "anthropic"],
     )
+    parser.add_argument(
+        "--judge-provider", default=None,
+        choices=["nvidia", "openrouter", "openai", "anthropic"],
+    )
     parser.add_argument("--api-key", default=None, help="API key (overrides env var)")
 
     # Models
@@ -67,6 +71,7 @@ def main():
 
     workflow = ProofWorkflow(
         provider_name=args.provider,
+        judge_provider_name=args.judge_provider,
         prover_model=args.model,
         evaluator_models=evaluator_models,
         api_key=args.api_key,
@@ -80,6 +85,7 @@ def main():
     )
 
     print(f"\nProvider       : {args.provider}")
+    print(f"Judge provider : {args.judge_provider or args.provider}")
     print(f"Prover model   : {args.model}")
     print(f"Judge model(s) : {evaluator_models}")
     print(f"Temperatures   : gen={temp_config.generation}, corr={temp_config.correction}, "

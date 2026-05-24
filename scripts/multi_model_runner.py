@@ -24,6 +24,7 @@ def main():
     parser.add_argument("--config", required=False, default=None)
     parser.add_argument("--models", nargs="+", required=True)
     parser.add_argument("--provider", default="nvidia")
+    parser.add_argument("--judge-provider", default=None)
     parser.add_argument("--output-root", default="batch_results")
     parser.add_argument("--api-key", default=None)
     parser.add_argument("--max-iter", type=int, default=None)
@@ -39,6 +40,8 @@ def main():
         out_dir.mkdir(parents=True, exist_ok=True)
 
         cmd = [sys.executable, "scripts/run_batch.py", "--input", args.input, "--provider", args.provider, "--model", model, "--output", str(out_dir)]
+        if args.judge_provider:
+            cmd += ["--judge-provider", args.judge_provider]
         if args.config:
             cmd += ["--config", args.config]
         if args.multi_judge:
