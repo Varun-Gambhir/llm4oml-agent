@@ -350,6 +350,9 @@ class BatchProcessor:
             verdict_scores = {"PASS": 5, "PASS_MINOR": 4, "CONDITIONAL": 3, "FAIL": 2, "REJECT": 1}
             df.at[index, "Overall_Score"] = verdict_scores.get(evf.get("verdict", "FAIL"), 0)
 
+            df.at[index, "Judge_Verdict_Variance"] = evf.get("verdict_variance", 0.0)
+            df.at[index, "Is_Split_Verdict"] = evf.get("is_split_verdict", False)
+
             esf = evf.get("error_set", {})
             df.at[index, "Total_Errors_Final"] = sum(
                 len(v) for v in esf.values() if isinstance(v, list)

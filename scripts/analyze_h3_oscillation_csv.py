@@ -20,7 +20,7 @@ def analyze_h3_from_csv(ablation_runs_dir: Path, output_dir: Path):
         print("No results.csv found in ablation runs directories.")
         return
 
-    full_df = pd.concat(all_data, ignore_ignore=True) if hasattr(pd.concat, 'ignore_index') else pd.concat(all_data, ignore_index=True)
+    full_df = pd.concat(all_data, ignore_index=True)
     
     # Analyze by regression penalty weight
     penalties = sorted(full_df['w_rp_pen'].unique())

@@ -141,6 +141,15 @@ def load_results(results_dir: Path) -> pd.DataFrame:
         raise FileNotFoundError(f"results.csv not found in {results_dir}")
 
     df = pd.read_csv(csv_path)
+    
+    gt_path = results_dir / "ground_truth.csv"
+    if gt_path.exists():
+        gt = pd.read_csv(gt_path)[["Problem_Statement", "human_correctness"]]
+        df = df.merge(gt, on="Problem_Statement", how="left")
+        print("  ✓  ground_truth.csv found — using human_correctness as correlation target")
+    else:
+        print("  ⚠  No ground_truth.csv found — using judge-derived Overall_Score as proxy")
+
     missing = REQUIRED_COLS - set(df.columns)
     if missing:
         raise ValueError(
@@ -182,12 +191,20 @@ def run_sensitivity_analysis(
 ) -> pd.DataFrame:
     """
     For each weight config, recompute CRS for every row then measure
-    Spearman ρ and Pearson r against Overall_Score.
+    Spearman ρ and Pearson r against the target metric.
     """
-    err  = df["ERR_Final"].values.astype(float)
-    rp   = df["RP_Final"].values.astype(float)
-    tfp  = df["TFP_Final"].values.astype(float)
-    human = df["Overall_Score"].values.astype(float)
+    correlation_target = "human_correctness" if "human_correctness" in df.columns else "Overall_Score"
+    
+    # Filter out rows where correlation target is missing
+    df_valid = df.dropna(subset=[correlation_target])
+    
+    if len(df_valid) == 0:
+        raise ValueError(f"No valid rows with '{correlation_target}' found.")
+        
+    err  = df_valid["ERR_Final"].values.astype(float)
+    rp   = df_valid["RP_Final"].values.astype(float)
+    tfp  = df_valid["TFP_Final"].values.astype(float)
+    human = df_valid[correlation_target].values.astype(float)
 
     records = []
     for cfg in weight_configs:
@@ -231,7 +248,7 @@ def _pivot(results_df: pd.DataFrame, metric: str) -> tuple[pd.DataFrame, np.ndar
     return matrix, np.array(w_err_vals), np.array(w_rp_vals)
 
 
-def plot_heatmaps(results_df: pd.DataFrame, output_dir: Path, default_w_err: float = 0.5, default_w_rp: float = 0.4):
+def plot_heatmaps(results_df: pd.DataFrame, output_dir: Path, correlation_target: str, default_w_err: float = 0.5, default_w_rp: float = 0.4):
     """
     2-D heatmap of Spearman ρ over the (w_err, w_rp_pen) grid.
     The default operating point is annotated with a red star.
@@ -242,7 +259,7 @@ def plot_heatmaps(results_df: pd.DataFrame, output_dir: Path, default_w_err: flo
     fig, axes = plt.subplots(1, 2, figsize=(16, 6))
     fig.suptitle(
         "CRS Weight Sensitivity Analysis\n"
-        "Correlation of CRS with Judge-Derived Human Score (Overall_Score)",
+        f"Correlation of CRS with {correlation_target}",
         fontsize=14, fontweight="bold"
     )
 
@@ -675,8 +692,10 @@ def main():
     print("Step 4/5  Generating visualisations …")
     if HAS_PLOT:
         sns.set_style("whitegrid")
+        correlation_target = "human_correctness" if "human_correctness" in df.columns else "Overall_Score"
         plot_heatmaps(
             results_df, output_dir,
+            correlation_target=correlation_target,
             default_w_err=default_cfg["w_err"],
             default_w_rp=default_cfg["w_rp_pen"],
         )

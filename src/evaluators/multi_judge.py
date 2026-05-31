@@ -152,8 +152,18 @@ class MultiJudgeEvaluator:
 
         # Ordinal-aware verdict (weighted median)
         verdict_to_score = {"PASS": 5, "PASS_MINOR": 4, "CONDITIONAL": 3, "FAIL": 2, "REJECT": 1}
+        
+        verdict_scores_list = [
+            verdict_to_score.get(evaluations[i].metrics.overall_verdict, 2) 
+            for i in valid_indices
+        ]
+        verdict_variance = float(np.var(verdict_scores_list)) if verdict_scores_list else 0.0
+        judge_split = len(set(
+            evaluations[i].metrics.overall_verdict for i in valid_indices
+        )) > 1
+        
         scored = sorted(
-            (verdict_to_score.get(evaluations[i].metrics.overall_verdict, 2), weights[j])
+            (verdict_scores_list[j], weights[j])
             for j, i in enumerate(valid_indices)
         )
         cumulative = 0.0
@@ -197,6 +207,8 @@ class MultiJudgeEvaluator:
             mean_completeness=mean_completeness,
             mean_assumption_score=mean_assumption,
             consensus_verdict=consensus_verdict,
+            verdict_variance=verdict_variance,
+            is_split_verdict=judge_split,
             judge_reliability_scores=jrs.tolist(),
             outlier_judges=[evaluations[i].judge_id for i in outliers],
             consensus_error_set=consensus_error_set,

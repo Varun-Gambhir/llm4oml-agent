@@ -15,6 +15,13 @@ class EvaluationMetrics(BaseModel):
     operator_error: bool = Field(description="OP: incorrect algebraic/analytic manipulation")
     completeness_score: int = Field(ge=0, le=5, description="0=empty 5=fully rigorous")
     assumption_use_score: int = Field(ge=0, le=5, description="0=assumptions ignored 5=all used correctly")
+    correctness_verdict: str = Field(
+        description="CORRECT|PROBABLY_CORRECT|INCOMPLETE|INCORRECT — mathematical validity only"
+    )
+    critical_errors: List[str] = Field(
+        default_factory=list,
+        description="List of mathematical invalidity descriptions (wrong rate, false inequality, etc.)"
+    )
     overall_verdict: str = Field(description="PASS | PASS_MINOR | CONDITIONAL | FAIL | REJECT")
     detailed_feedback: str = Field(description="Full analysis with flagged steps annotated")
 
@@ -105,6 +112,8 @@ class ConsensusEvaluation(BaseModel):
     mean_completeness: float
     mean_assumption_score: float
     consensus_verdict: str
+    verdict_variance: float = Field(default=0.0, description="Variance in judge verdicts — high = uncertain case")
+    is_split_verdict: bool = Field(default=False, description="True if judges disagreed on verdict category")
 
     judge_reliability_scores: List[float]
     outlier_judges: List[str] = Field(default_factory=list)

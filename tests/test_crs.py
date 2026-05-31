@@ -38,6 +38,8 @@ def make_metrics(**kwargs) -> EvaluationMetrics:
         operator_error=False,
         completeness_score=3,
         assumption_use_score=3,
+        correctness_verdict="PROBABLY_CORRECT",
+        critical_errors=[],
         overall_verdict="CONDITIONAL",
         detailed_feedback="Test feedback",
         hallucination_steps=set(),

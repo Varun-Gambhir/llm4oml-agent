@@ -233,6 +233,8 @@ class SingleJudge(BaseEvaluator):
             operator_error=False,
             completeness_score=0,
             assumption_use_score=0,
+            correctness_verdict="INCORRECT",
+            critical_errors=["SYSTEM ERROR: Parsing failed"],
             overall_verdict="FAIL",
             detailed_feedback=(
                 f"SYSTEM ERROR: Evaluation parsing failed after all retries. "

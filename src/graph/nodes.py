@@ -221,6 +221,8 @@ class WorkflowNodes:
             operator_error=any(e.metrics.operator_error for e in consensus.evaluations),
             completeness_score=round(consensus.mean_completeness),
             assumption_use_score=round(consensus.mean_assumption_score),
+            correctness_verdict="CORRECT", # Synthetic placeholder; not aggregated natively here
+            critical_errors=[],
             overall_verdict=consensus.consensus_verdict,
             detailed_feedback="",
             hallucination_steps=set(consensus.merged_hallucination_steps),
@@ -271,6 +273,8 @@ class WorkflowNodes:
                 "weighted_cfrs": consensus.weighted_cfrs,
             },
             "verdict": consensus.consensus_verdict,
+            "verdict_variance": consensus.verdict_variance,
+            "is_split_verdict": consensus.is_split_verdict,
             "error_set_previous": state.get("error_set_current", StateManager.empty_error_set()),
             "error_set_current": error_set,
             "flagged_steps_current": flagged,

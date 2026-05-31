@@ -123,6 +123,18 @@ PROOF TO EVALUATE:
 
 ---
 
+## Correctness vs Completeness
+First, score the mathematical correctness of the derivations.
+Do NOT flag missing algebra, omitted constants, or informal exposition in the correctness verdict.
+Only flag the proof as INCORRECT or INCOMPLETE if:
+1. It contains false inequalities or invalid deductions
+2. Claims a convergence rate different from what is derived
+3. Misuses an assumption in a way that invalidates the theorem
+4. Uses circular reasoning
+5. Has a wrong theorem statement
+
+---
+
 ## Evaluation Dimensions
 
 ### A. Convergence Rate Extraction
@@ -168,6 +180,8 @@ Return ONLY valid JSON matching the schema below. No prose outside the JSON bloc
   "operator_error": true/false,
   "completeness_score": 0-5,
   "assumption_use_score": 0-5,
+  "correctness_verdict": "CORRECT|PROBABLY_CORRECT|INCOMPLETE|INCORRECT",
+  "critical_errors": ["list of strings describing fatal mathematical errors"],
   "overall_verdict": "PASS|PASS_MINOR|CONDITIONAL|FAIL|REJECT",
   "detailed_feedback": "Full analysis text with [Step N] citations...",
   "hallucination_steps": [list of integer step numbers],
