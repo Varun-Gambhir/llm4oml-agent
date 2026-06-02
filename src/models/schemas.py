@@ -16,6 +16,7 @@ class EvaluationMetrics(BaseModel):
     completeness_score: int = Field(ge=0, le=5, description="0=empty 5=fully rigorous")
     assumption_use_score: int = Field(ge=0, le=5, description="0=assumptions ignored 5=all used correctly")
     correctness_verdict: str = Field(
+        default="UNKNOWN",
         description="CORRECT|PROBABLY_CORRECT|INCOMPLETE|INCORRECT — mathematical validity only"
     )
     critical_errors: List[str] = Field(
