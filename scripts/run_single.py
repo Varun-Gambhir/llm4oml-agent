@@ -22,11 +22,11 @@ def main():
     # Provider
     parser.add_argument(
         "--provider", default="nvidia",
-        choices=["nvidia", "openrouter", "openai", "anthropic"],
+        choices=["nvidia", "openrouter", "openai", "anthropic", "google", "google_ai_studio"],
     )
     parser.add_argument(
         "--judge-provider", default=None,
-        choices=["nvidia", "openrouter", "openai", "anthropic"],
+        choices=["nvidia", "openrouter", "openai", "anthropic", "google", "google_ai_studio"],
     )
     parser.add_argument("--api-key", default=None, help="API key (overrides env var)")
 
@@ -56,6 +56,8 @@ def main():
             "openrouter": "anthropic/claude-3.5-sonnet",
             "openai": "gpt-4",
             "anthropic": "claude-3-5-sonnet-20241022",
+            "google": "gemini-3-pro-preview",
+            "google_ai_studio": "gemini-3-pro-preview",
         }
         args.model = defaults[args.provider]
         print(f"Using default model for {args.provider}: {args.model}")

@@ -6,7 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Framework: LangGraph](https://img.shields.io/badge/Framework-LangGraph-orange.svg)](https://github.com/langchain-ai/langgraph)
 
-An advanced multi-agent LLM system designed for automated convergence proof generation, structured evaluation, and iterative refinement. This system introduces the **Correction Reasoning Score (CRS)** and **Judge Reliability Score (JRS)** to quantify mathematical reasoning improvements.
+An advanced multi-agent LLM system designed for automated convergence proof generation, structured evaluation, and iterative refinement. This system introduces the **Regression-Aware Correction Score (RACS)** and **Judge Reliability Score (JRS)** to quantify mathematical reasoning improvements.
 
 ---
 
@@ -18,7 +18,7 @@ The **Convergence Proof Agent** automates the rigorous process of proving conver
 *   **LaTeX Generation:** Produces production-ready convergence proofs.
 *   **Structured Auditing:** Evaluates proofs using a strict JSON schema for step-by-step verification.
 *   **Multi-Judge Consensus:** Reduces LLM hallucination by aggregating verdicts from multiple parallel judges.
-*   **Quality Metrics:** Quantifies the "intelligence" of a correction using the CRS metric.
+*   **Quality Metrics:** Quantifies the quality of a correction transition using the RACS metric.
 
 ---
 
@@ -37,7 +37,7 @@ graph TD
     F -->|No| G[Error Feedback]
     G --> B
     F -->|Yes| H[Final LaTeX Output]
-    H --> I[CRS Quality Analysis]
+    H --> I[RACS Quality Analysis]
 ```
 
 ### Agents
@@ -49,10 +49,10 @@ graph TD
 
 ## 📊 Core Metrics
 
-### 1. Correction Reasoning Score (CRS)
-CRS measures the effectiveness of an iterative fix by balancing error resolution against regression.
+### 1. Regression-Aware Correction Score (RACS)
+RACS measures the effectiveness of an iterative fix by balancing error resolution against regression.
 
-$$CRS = [w_{err} \cdot ERR + w_{tfp} \cdot TFP] \times (1 - w_{rp\_pen} \cdot RP)$$
+$$RACS = [w_{err} \cdot ERR + w_{tfp} \cdot TFP] \times (1 - w_{rp\_pen} \cdot RP)$$
 
 *   **ERR (Error Resolution Rate):** Percentage of previous errors fixed.
 *   **RP (Regression Penalty):** New errors introduced in the revision.
@@ -90,6 +90,7 @@ NVIDIA_API_KEY=your_key
 OPENAI_API_KEY=your_key
 OPENROUTER_API_KEY=your_key
 ANTHROPIC_API_KEY=your_key
+GOOGLE_AI_STUDIO_API_KEY=your_key
 ```
 
 ---
@@ -104,6 +105,15 @@ python scripts/run_single.py \
   --assumptions "Convex objective, bounded gradients" \
   --provider nvidia \
   --multi-judge
+```
+
+Use Google AI Studio / Gemini with:
+```bash
+python scripts/run_single.py \
+  --algorithm "SGD with decreasing learning rate" \
+  --assumptions "Convex objective, bounded gradients" \
+  --provider google \
+  --model gemini-3-pro-preview
 ```
 
 ### Batch Processing
@@ -129,10 +139,10 @@ llm4oml-agent/
 ├── src/
 │   ├── agents/         # Prover and Judge logic
 │   ├── evaluators/     # Multi-judge consensus logic
-│   ├── metrics/        # CRS and JRS implementations
+│   ├── metrics/        # RACS and JRS implementations
 │   ├── graph/          # LangGraph state machine definitions
 │   └── models/         # Pydantic models for structured I/O
-├── tests/              # Pytest suite for CRS and logic
+├── tests/              # Pytest suite for RACS and logic
 └── requirements.txt
 ```
 
@@ -157,4 +167,3 @@ This project is licensed under the [MIT License](LICENSE).
 ## 👤 Author
 **Varun Gambhir**
 **Somshekar M**
-

@@ -7,21 +7,18 @@ This document describes the implementation of two critical hypotheses for your D
 - **H1**: Iterative multi-agent correction systematically improves final proof quality over single-pass baselines
 - **H3**: Imposing a strict regression penalty factor dynamically compresses oscillatory correction behavior and accelerates path convergence
 
-## Key Finding: RACS vs CRS Naming
+## Metric Naming: Use RACS
 
-**The metric is the same in both your paper and code.** The terminology difference is:
+Use **RACS** consistently in the paper and methodology:
 
-| Term | Where | Meaning |
-|------|-------|---------|
-| **RACS** | Paper | **Regression-Aware** Correction Score (emphasizes regression penalty) |
-| **CRS** | Code | Correction Reasoning Score (generic name) |
+> Regression-Aware Correction Score
 
-**Both refer to the identical formula:**
+The formula is:
 ```
 RACS = (w_err * ERR + w_tfp * TFP) × (1 - w_rp_pen * RP)
 ```
 
-**Code Update:** The metric has been renamed in docstrings from CRS → RACS to align with the paper. Variable names and class names remain unchanged for backwards compatibility.
+Some internal variable names and historical CSV columns may still contain `crs` for backwards compatibility, but all paper-facing explanation should call the metric RACS.
 
 ---
 

@@ -5,7 +5,7 @@
 LangGraph node implementations.
 
 Key fixes over v2:
-  1. CRS is now computed from iteration 1 onward (first iteration uses
+  1. RACS is now computed from iteration 1 onward (first iteration uses
      compute_first_iteration_crs; subsequent use the delta-based formula).
   2. Multi-judge path propagates fully resolved per-type error sets so that
      ERR, RP, and TFP are computed correctly.
@@ -94,7 +94,7 @@ class WorkflowNodes:
 
         self.use_multi_judge = use_multi_judge
 
-        # ── ABLATION PATCH: inject weights into calculator ────────────────────
+        # ── ABLATION PATCH: inject RACS weights into calculator ───────────────
         _w = crs_weights or {}
         w_err    = float(_w.get("w_err",    0.60))
         w_tfp    = float(_w.get("w_tfp",    1.0 - w_err))   # honour explicit or derive
@@ -214,7 +214,7 @@ class WorkflowNodes:
         }
         flagged: Set[int] = set(consensus.merged_flagged_steps)
 
-        # Build a synthetic EvaluationMetrics for first-iteration CRS
+        # Build a synthetic EvaluationMetrics for first-iteration RACS
         synthetic_metrics = EvaluationMetrics(
             hallucination_error=any(e.metrics.hallucination_error for e in consensus.evaluations),
             missing_step=any(e.metrics.missing_step for e in consensus.evaluations),
@@ -285,7 +285,7 @@ class WorkflowNodes:
         }
 
     # ------------------------------------------------------------------
-    # CRS computation (always computed, even on first iteration)
+    # RACS computation (always computed, even on first iteration)
     # ------------------------------------------------------------------
 
     def _compute_crs(
@@ -297,9 +297,9 @@ class WorkflowNodes:
         metrics: EvaluationMetrics,
     ):
         """
-        Compute CRS for ANY iteration:
+        Compute RACS for ANY iteration:
           - iteration == 1 → use compute_first_iteration_crs (static quality proxy)
-          - iteration >= 2 → use delta-based CRS with previous error set
+          - iteration >= 2 → use delta-based RACS with previous error set
         """
         if iteration <= 1:
             # First evaluation — no previous error set exists

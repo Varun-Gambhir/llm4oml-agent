@@ -548,10 +548,10 @@ Examples:
 
     # ── Provider / models — use None as sentinel so YAML can fill them in ─────
     parser.add_argument("--provider", default="nvidia",
-                        choices=["nvidia", "openrouter", "openai", "anthropic"],
+                        choices=["nvidia", "openrouter", "openai", "anthropic", "google", "google_ai_studio"],
                         help="LLM provider (default: nvidia)")
     parser.add_argument("--judge-provider", default=None,
-                        choices=["nvidia", "openrouter", "openai", "anthropic"],
+                        choices=["nvidia", "openrouter", "openai", "anthropic", "google", "google_ai_studio"],
                         help="LLM provider for judges (defaults to the same as provider)")
     parser.add_argument("--api-key", default=None,
                         help="API key (can also be set via .env file)")
@@ -594,6 +594,8 @@ Examples:
             "openrouter":  "anthropic/claude-3.5-sonnet",
             "openai":      "gpt-4",
             "anthropic":   "claude-3-5-sonnet-20241022",
+            "google":      "gemini-3-pro-preview",
+            "google_ai_studio": "gemini-3-pro-preview",
         }
         args.model = provider_defaults[args.provider]
         print(f"Using provider default model: {args.model}")

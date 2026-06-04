@@ -17,7 +17,7 @@ class ExecutionTracker:
     """
     Tracks complete execution history for a single algorithm.
     All proof content, feedback, metrics, and error sets are preserved
-    so that CRS can be audited and reproduced offline.
+    so that RACS can be audited and reproduced offline.
     """
 
     def __init__(self, output_dir: str = "output"):

@@ -27,10 +27,9 @@ FIXES in v3:
   4. When error_set_previous is empty (first iteration baseline), a synthetic
      "first-iteration RACS" is computed from static quality alone.
 
-NOTE: This metric is also known as CRS (Correction Reasoning Score) in some
-contexts, but RACS (Regression-Aware Correction Score) is the preferred name
-as it emphasizes the regression penalty mechanism which distinguishes it from
-naive correction metrics.
+NOTE: RACS (Regression-Aware Correction Score) is the canonical metric name.
+Some internal field names still use older compatibility labels so previously
+generated logs and CSV schemas remain readable.
 """
 
 import numpy as np
@@ -45,7 +44,7 @@ logger = logging.getLogger(__name__)
 
 class CorrectionMetricsCalculator:
     """
-    Computes ERR, RP, TFP and overall CRS with calibrated weights.
+    Computes ERR, RP, TFP and overall RACS with calibrated weights.
 
     Parameters
     ----------
@@ -116,7 +115,7 @@ class CorrectionMetricsCalculator:
         return len(fixed_flagged) / len(flagged_steps)
 
     # ------------------------------------------------------------------
-    # Composite CRS
+    # Composite RACS
     # ------------------------------------------------------------------
 
     def compute_crs(
@@ -152,7 +151,7 @@ class CorrectionMetricsCalculator:
 
         if is_mixed:
             logger.warning(
-                "Mixed transition: fixed=%d, introduced=%d, CRS=%.3f (raw=%.3f)",
+                "Mixed transition: fixed=%d, introduced=%d, RACS=%.3f (raw=%.3f)",
                 len(prev_all - curr_all),
                 len(curr_all - prev_all),
                 crs,

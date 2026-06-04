@@ -10,12 +10,15 @@ from .nvidia_provider import NVIDIAProvider
 from .openrouter_provider import OpenRouterProvider
 from .openai_provider import OpenAIProvider
 from .anthropic_provider import AnthropicProvider
+from .google_ai_studio_provider import GoogleAIStudioProvider
 
 _ENV_VARS = {
-    "nvidia": "NVIDIA_API_KEY",
-    "openrouter": "OPENROUTER_API_KEY",
-    "openai": "OPENAI_API_KEY",
-    "anthropic": "ANTHROPIC_API_KEY",
+    "nvidia": ("NVIDIA_API_KEY",),
+    "openrouter": ("OPENROUTER_API_KEY",),
+    "openai": ("OPENAI_API_KEY",),
+    "anthropic": ("ANTHROPIC_API_KEY",),
+    "google": ("GOOGLE_AI_STUDIO_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"),
+    "google_ai_studio": ("GOOGLE_AI_STUDIO_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"),
 }
 
 _PROVIDERS = {
@@ -23,6 +26,8 @@ _PROVIDERS = {
     "openrouter": OpenRouterProvider,
     "openai": OpenAIProvider,
     "anthropic": AnthropicProvider,
+    "google": GoogleAIStudioProvider,
+    "google_ai_studio": GoogleAIStudioProvider,
 }
 
 
@@ -42,7 +47,8 @@ class LLMProviderFactory:
 
         Parameters
         ----------
-        provider_name : "nvidia" | "openrouter" | "openai" | "anthropic"
+        provider_name : "nvidia" | "openrouter" | "openai" | "anthropic" |
+                        "google" | "google_ai_studio"
         model_name    : provider-specific model identifier
         api_key       : API key; falls back to environment variable if None
         **kwargs      : forwarded to provider constructor (temperature, timeout, etc.)
@@ -54,12 +60,12 @@ class LLMProviderFactory:
             )
 
         if api_key is None:
-            env_var = _ENV_VARS[key]
-            api_key = os.getenv(env_var)
+            env_vars = _ENV_VARS[key]
+            api_key = next((os.getenv(env_var) for env_var in env_vars if os.getenv(env_var)), None)
             if not api_key:
                 raise ValueError(
                     f"API key not found for provider {provider_name!r}. "
-                    f"Set the {env_var} environment variable or pass api_key."
+                    f"Set one of {', '.join(env_vars)} or pass api_key."
                 )
 
         return _PROVIDERS[key](model_name, api_key, **kwargs)

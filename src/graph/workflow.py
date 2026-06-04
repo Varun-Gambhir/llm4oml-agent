@@ -2,7 +2,7 @@
 # File: src/graph/workflow.py  (patched for ablation study — crs_weights param added)
 # ============================================================================
 """LangGraph workflow with provider abstraction, per-phase temperatures,
-and optional CRS weight injection for ablation studies.
+and optional RACS weight injection for ablation studies.
 
 ABLATION PATCH (v3.1):
   ProofWorkflow now accepts `crs_weights: dict` and forwards it to
@@ -39,9 +39,9 @@ class ProofWorkflow:
         default but is overridden per-call by the phase logic. Judges always
         use near-zero temperature regardless of this setting.
 
-    CRS weight injection (ablation):
+    RACS weight injection (ablation):
         Pass `crs_weights={"w_err": 0.6, "w_rp_pen": 0.3}` to override the
-        default CRS formula weights for this run.  w_tfp is derived as
+        default RACS formula weights for this run.  w_tfp is derived as
         1 - w_err automatically.
     """
 
@@ -151,7 +151,7 @@ class ProofWorkflow:
         # ── show active weights ───────────────────────────────────────────────
         if self.crs_weights:
             w_err = self.crs_weights.get("w_err", 0.5)
-            print(f"  CRS Weights: w_err={w_err:.2f}  w_tfp={1-w_err:.2f}  "
+            print(f"  RACS Weights: w_err={w_err:.2f}  w_tfp={1-w_err:.2f}  "
                   f"w_rp={self.crs_weights.get('w_rp_pen', 0.4):.2f}")
         print(f"{'='*60}")
 
@@ -170,7 +170,7 @@ class ProofWorkflow:
             err = cm.get("error_resolution_rate", 0) if isinstance(cm, dict) else 0
             rp  = cm.get("regression_penalty", 0) if isinstance(cm, dict) else 0
             tfp = cm.get("targeted_fix_precision", 0) if isinstance(cm, dict) else 0
-            print(f"  ✓ CRS: {crs:.3f}  (ERR={err:.3f}, RP={rp:.3f}, TFP={tfp:.3f})")
+            print(f"  ✓ RACS: {crs:.3f}  (ERR={err:.3f}, RP={rp:.3f}, TFP={tfp:.3f})")
 
         return result
 
@@ -203,7 +203,7 @@ class ProofWorkflow:
               f"eval={self.temp_config.evaluation}")
         if self.crs_weights:
             w_err = self.crs_weights.get("w_err", 0.5)
-            print(f"#   CRS Weights : w_err={w_err:.2f}  w_tfp={1-w_err:.2f}  "
+            print(f"#   RACS Weights: w_err={w_err:.2f}  w_tfp={1-w_err:.2f}  "
                   f"w_rp={self.crs_weights.get('w_rp_pen', 0.4):.2f}")
         print(f"{'#'*60}\n")
 

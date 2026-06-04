@@ -26,7 +26,7 @@ class EvaluationMetrics(BaseModel):
     overall_verdict: str = Field(description="PASS | PASS_MINOR | CONDITIONAL | FAIL | REJECT")
     detailed_feedback: str = Field(description="Full analysis with flagged steps annotated")
 
-    # Step-level error sets — REQUIRED for CRS to work correctly
+    # Step-level error sets — REQUIRED for RACS to work correctly
     hallucination_steps: Set[int] = Field(
         default_factory=set,
         description="Proof line/step numbers containing hallucinations"
@@ -74,7 +74,7 @@ class EvaluationMetrics(BaseModel):
 
 
 class CorrectionMetricsOutput(BaseModel):
-    """Output from CRS computation — fully resolved with no ceiling artifacts."""
+    """Output from RACS computation — fully resolved with no ceiling artifacts."""
 
     # Core components
     error_resolution_rate: float = Field(ge=0.0, le=1.0, description="ERR")
@@ -82,8 +82,8 @@ class CorrectionMetricsOutput(BaseModel):
     targeted_fix_precision: float = Field(ge=0.0, le=1.0, description="TFP")
 
     # Final score
-    correction_reasoning_score: float = Field(ge=0.0, le=1.0, description="CRS (clipped to [0,1])")
-    crs_raw: float = Field(description="CRS before clipping (can be > 1 or < 0)")
+    correction_reasoning_score: float = Field(ge=0.0, le=1.0, description="RACS (clipped to [0,1])")
+    crs_raw: float = Field(description="RACS before clipping (can be > 1 or < 0)")
 
     # Transition diagnostics
     errors_fixed: int
@@ -122,9 +122,9 @@ class ConsensusEvaluation(BaseModel):
     # Fully resolved consensus error set
     consensus_error_set: dict   # {"consensus_errors": Set[int]}
 
-    weighted_cfrs: float = Field(description="Weighted quality proxy (NOT CRS)")
+    weighted_cfrs: float = Field(description="Weighted quality proxy (NOT RACS)")
 
-    # Merged error sets for CRS computation downstream
+    # Merged error sets for RACS computation downstream
     merged_hallucination_steps: Set[int] = Field(default_factory=set)
     merged_missing_step_indices: Set[int] = Field(default_factory=set)
     merged_operator_error_steps: Set[int] = Field(default_factory=set)
